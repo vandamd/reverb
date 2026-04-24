@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "appname",
-    "slug": "appname",
+    "name": "Tunes",
+    "slug": "tunes",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "appname",
+    "scheme": "tunes",
     "icon": "./assets/images/icon.png",
     "android": {
       "backgroundColor": "#000000",
-      "package": "com.vandam.appname"
+      "package": "com.vandam.tunes",
+      "permissions": ["android.permission.WRITE_SECURE_SETTINGS"]
     },
     "plugins": [
       "expo-router",
@@ -21,7 +22,8 @@
         }
       ],
       "./plugins/withAndroidConfigChanges",
-      "./plugins/withAndroidTheme"
+      "./plugins/withAndroidTheme",
+      "./plugins/withDaltonizerToggle"
     ],
     "experiments": {
       "typedRoutes": true
