@@ -113,6 +113,8 @@ export function ContentList<ItemT>({
           ]}
         >
           <FlatList
+            contentInsetAdjustmentBehavior="never"
+            style={{ flex: 1 }}
             contentContainerStyle={[
               styles.content,
               padding,
@@ -124,7 +126,6 @@ export function ContentList<ItemT>({
                 : null,
               listStyle,
             ]}
-            contentInsetAdjustmentBehavior="automatic"
             data={data}
             initialNumToRender={16}
             keyboardShouldPersistTaps="handled"
@@ -137,7 +138,6 @@ export function ContentList<ItemT>({
             }
             onScroll={handleScroll as FlatListProps<ItemT>["onScroll"]}
             overScrollMode="never"
-            removeClippedSubviews
             renderItem={renderItem}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}

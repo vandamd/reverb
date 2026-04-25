@@ -91,6 +91,7 @@ export default function AlbumsScreen() {
 
   return (
     <ContentList
+      bottomPadding={0}
       contentGap={8}
       contentWidth="wide"
       data={sortedAlbums}
