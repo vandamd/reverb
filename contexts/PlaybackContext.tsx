@@ -33,7 +33,7 @@ interface PlaybackContextValue {
   shuffle: boolean;
   skipNext: () => Promise<void>;
   skipPrevious: () => Promise<void>;
-  togglePlayPause: () => void;
+  togglePlayPause: () => Promise<void>;
 }
 
 const PlaybackContext = createContext<PlaybackContextValue | undefined>(
@@ -72,7 +72,9 @@ const PlaybackControlsContext = createContext<
 const initialStatus = {
   didJustFinish: false,
   durationMs: 0,
+  isLoaded: false,
   isPlaying: false,
+  playbackState: "idle",
   progressMs: 0,
 };
 const playbackStatusUpdateIntervalMs = 5000;
@@ -115,11 +117,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const subscription = player.addListener(
       "playbackStatusUpdate",
       (nextStatus: AudioStatus) => {
-        setStatus({
-          didJustFinish: nextStatus.didJustFinish,
-          durationMs: Math.round(nextStatus.duration * 1000),
-          isPlaying: nextStatus.playing,
-          progressMs: Math.round(nextStatus.currentTime * 1000),
+        setStatus((previousStatus) => {
+          const stoppedExternally =
+            nextStatus.playbackState === "idle" &&
+            !nextStatus.isLoaded &&
+            !nextStatus.didJustFinish;
+
+          return {
+            didJustFinish: nextStatus.didJustFinish,
+            durationMs: stoppedExternally
+              ? previousStatus.durationMs
+              : Math.round(nextStatus.duration * 1000),
+            isLoaded: nextStatus.isLoaded,
+            isPlaying: nextStatus.playing,
+            playbackState: nextStatus.playbackState,
+            progressMs: stoppedExternally
+              ? previousStatus.progressMs
+              : Math.round(nextStatus.currentTime * 1000),
+          };
         });
       }
     );
@@ -142,12 +157,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadTrack = useCallback(
-    async (track: LocalTrack, shouldPlay: boolean) => {
+    async (track: LocalTrack, shouldPlay: boolean, startPositionMs = 0) => {
       const player = playerRef.current;
       if (!player) {
         return;
       }
       setError(null);
+      const initialProgressMs = Math.max(0, startPositionMs);
+      setStatus({
+        ...initialStatus,
+        durationMs: track.durationMs,
+        playbackState: "buffering",
+        progressMs: initialProgressMs,
+      });
       updateLockScreen(track);
       try {
         player.replace({ name: track.title, uri: track.uri });
@@ -157,6 +179,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           track.fileName
         );
         player.replace({ name: track.title, uri: cachedTrack.uri });
+      }
+      if (initialProgressMs > 0) {
+        await player.seekTo(initialProgressMs / 1000);
       }
       if (shouldPlay) {
         player.play();
@@ -228,17 +253,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
   }, [currentTrack, skipNext, status.didJustFinish]);
 
-  const togglePlayPause = useCallback(() => {
+  const togglePlayPause = useCallback(async () => {
     const player = playerRef.current;
     if (!player) {
       return;
     }
     if (status.isPlaying) {
       player.pause();
-    } else {
-      player.play();
+      return;
     }
-  }, [status.isPlaying]);
+
+    if (currentTrack && status.playbackState === "idle") {
+      await loadTrack(currentTrack, true, status.progressMs);
+      return;
+    }
+
+    player.play();
+  }, [
+    currentTrack,
+    loadTrack,
+    status.isPlaying,
+    status.playbackState,
+    status.progressMs,
+  ]);
 
   const seekToPosition = useCallback(async (progressMs: number) => {
     await playerRef.current?.seekTo(Math.max(0, progressMs) / 1000);
