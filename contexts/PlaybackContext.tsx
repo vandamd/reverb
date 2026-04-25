@@ -6,8 +6,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import TrackPlayer, {
   AppKilledPlaybackBehavior,
   Capability,
@@ -77,6 +79,13 @@ const PlaybackControlsContext = createContext<
 const playbackProgressUpdateIntervalMs = 1000;
 let playerSetupPromise: Promise<void> | null = null;
 
+const getErrorCode = (error: unknown) => {
+  if (typeof error === "object" && error && "code" in error) {
+    return String(error.code);
+  }
+  return "";
+};
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
     return error.message;
@@ -88,10 +97,7 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const isPlayerAlreadySetupError = (error: unknown) => {
-  const code =
-    typeof error === "object" && error && "code" in error
-      ? String(error.code)
-      : "";
+  const code = getErrorCode(error);
   const message = getErrorMessage(error).toLowerCase();
   return (
     code === "player_already_initialized" ||
@@ -99,8 +105,27 @@ const isPlayerAlreadySetupError = (error: unknown) => {
   );
 };
 
-const ensureTrackPlayerReady = () => {
-  playerSetupPromise ??= (async () => {
+const isPlayerNotReadyError = (error: unknown) => {
+  const code = getErrorCode(error);
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    code === "player_not_initialized" ||
+    code === "android_cannot_setup_player_in_background" ||
+    message.includes("not initialized") ||
+    message.includes("setupplayer first") ||
+    message.includes("must be in the foreground")
+  );
+};
+
+const createBackgroundSetupError = () =>
+  new Error("TrackPlayer setup is only available while the app is active.");
+
+const setupTrackPlayer = () =>
+  (async () => {
+    if (AppState.currentState !== "active") {
+      throw createBackgroundSetupError();
+    }
+
     try {
       await TrackPlayer.setupPlayer({
         autoHandleInterruptions: true,
@@ -142,7 +167,25 @@ const ensureTrackPlayerReady = () => {
     throw error;
   });
 
-  return playerSetupPromise;
+const ensureTrackPlayerReady = async (hasRetried = false): Promise<void> => {
+  if (playerSetupPromise) {
+    try {
+      await playerSetupPromise;
+      await TrackPlayer.getPlaybackState();
+      return;
+    } catch (error) {
+      if (!(isPlayerNotReadyError(error) && !hasRetried)) {
+        throw error;
+      }
+      playerSetupPromise = null;
+    }
+  }
+
+  playerSetupPromise = setupTrackPlayer();
+  await playerSetupPromise;
+  if (!hasRetried) {
+    await ensureTrackPlayerReady(true);
+  }
 };
 
 const toTrackPlayerRepeatMode = (repeatMode: RepeatMode) => {
@@ -187,34 +230,94 @@ const shuffledTracksAfterCurrent = (
   return [currentTrack, ...upcomingTracks];
 };
 
-const playbackIntentStates = new Set<State>([
+const trackPlayerPlayingStates = new Set<State>([
   State.Buffering,
   State.Loading,
   State.Paused,
   State.Playing,
   State.Ready,
+  State.Stopped,
 ]);
+
+const getTrackId = (track: Track) => {
+  if (typeof track.id === "string") {
+    return track.id;
+  }
+  return null;
+};
+
+const getTrackMap = (trackGroups: LocalTrack[][]) =>
+  new Map(
+    trackGroups.flatMap((tracks) => tracks.map((track) => [track.id, track]))
+  );
+
+const resolveNativeQueue = (
+  nativeQueue: Track[],
+  tracksById: Map<string, LocalTrack>
+) =>
+  nativeQueue
+    .map((track) => {
+      const trackId = getTrackId(track);
+      return trackId ? tracksById.get(trackId) : undefined;
+    })
+    .filter((track): track is LocalTrack => Boolean(track));
+
+const getExistingQueueIndex = (
+  nativeQueue: Track[],
+  nativeActiveIndex: number | undefined,
+  queue: LocalTrack[]
+) => {
+  if (typeof nativeActiveIndex !== "number" || nativeActiveIndex < 0) {
+    return -1;
+  }
+
+  const nativeTrack = nativeQueue[nativeActiveIndex];
+  const nativeTrackId = nativeTrack ? getTrackId(nativeTrack) : null;
+  return nativeTrackId
+    ? queue.findIndex((track) => track.id === nativeTrackId)
+    : -1;
+};
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const playbackState = usePlaybackState();
   const playWhenReady = usePlayWhenReady();
   const progress = useProgress(playbackProgressUpdateIntervalMs);
+  const [syncedPlaybackState, setSyncedPlaybackState] = useState<
+    State | undefined
+  >(undefined);
+  const [syncedPlayWhenReady, setSyncedPlayWhenReady] = useState<
+    boolean | undefined
+  >(undefined);
+  const [syncedProgress, setSyncedProgress] = useState<{
+    duration: number;
+    position: number;
+  } | null>(null);
   const [sourceQueue, setSourceQueue] = useState<LocalTrack[]>([]);
   const [queue, setQueue] = useState<LocalTrack[]>([]);
   const [index, setIndex] = useState(-1);
   const [shuffle, setShuffleState] = useState(false);
   const [repeatMode, setRepeatModeState] = useState<RepeatMode>("off");
   const [error, setError] = useState<string | null>(null);
+  const playbackSnapshotRef = useRef({ durationMs: 0, progressMs: 0 });
   const currentTrack = index >= 0 ? (queue[index] ?? null) : null;
+  const effectivePlaybackState = syncedPlaybackState ?? playbackState.state;
+  const effectivePlayWhenReady = syncedPlayWhenReady ?? playWhenReady;
   const isPlaying =
-    playbackState.state === State.Playing ||
-    (playWhenReady === true &&
-      playbackState.state !== undefined &&
-      playbackIntentStates.has(playbackState.state) &&
-      currentTrack !== null);
+    effectivePlayWhenReady === true &&
+    effectivePlaybackState !== undefined &&
+    trackPlayerPlayingStates.has(effectivePlaybackState) &&
+    currentTrack !== null;
   const durationMs =
-    Math.round(progress.duration * 1000) || currentTrack?.durationMs || 0;
-  const progressMs = Math.round(progress.position * 1000);
+    Math.round((syncedProgress?.duration ?? progress.duration) * 1000) ||
+    currentTrack?.durationMs ||
+    0;
+  const progressMs = Math.round(
+    (syncedProgress?.position ?? progress.position) * 1000
+  );
+
+  useEffect(() => {
+    playbackSnapshotRef.current = { durationMs, progressMs };
+  }, [durationMs, progressMs]);
 
   const replaceTrackPlayerQueue = useCallback(
     async (
@@ -281,6 +384,123 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [currentTrack, index, queue, sourceQueue]
   );
 
+  const syncPlaybackFromNative = useCallback(async () => {
+    try {
+      await ensureTrackPlayerReady();
+
+      const [
+        nativeQueue,
+        nativeActiveIndex,
+        nativeProgress,
+        nativePlaybackState,
+        nativePlayWhenReady,
+      ] = await Promise.all([
+        TrackPlayer.getQueue(),
+        TrackPlayer.getActiveTrackIndex(),
+        TrackPlayer.getProgress(),
+        TrackPlayer.getPlaybackState(),
+        TrackPlayer.getPlayWhenReady(),
+      ]);
+
+      const tracksById = getTrackMap([sourceQueue, queue]);
+      const resolvedQueue = resolveNativeQueue(nativeQueue, tracksById);
+      const existingQueueIndex = getExistingQueueIndex(
+        nativeQueue,
+        nativeActiveIndex,
+        queue
+      );
+      let nextSyncedProgress = {
+        duration: nativeProgress.duration,
+        position: nativeProgress.position,
+      };
+
+      if (
+        nativeQueue.length > 0 &&
+        resolvedQueue.length === nativeQueue.length
+      ) {
+        setQueue(resolvedQueue);
+        if (
+          typeof nativeActiveIndex === "number" &&
+          nativeActiveIndex >= 0 &&
+          nativeActiveIndex < resolvedQueue.length
+        ) {
+          setIndex(nativeActiveIndex);
+        }
+      } else if (existingQueueIndex >= 0) {
+        setIndex(existingQueueIndex);
+      } else if (nativeQueue.length === 0 && queue.length > 0 && index >= 0) {
+        const snapshot = playbackSnapshotRef.current;
+        const startPositionMs = Math.min(
+          snapshot.progressMs,
+          snapshot.durationMs
+        );
+        await replaceTrackPlayerQueue(
+          queue,
+          index,
+          false,
+          repeatMode,
+          startPositionMs
+        );
+        nextSyncedProgress = {
+          duration: snapshot.durationMs / 1000,
+          position: startPositionMs / 1000,
+        };
+      }
+
+      setSyncedPlaybackState(nativePlaybackState.state);
+      setSyncedPlayWhenReady(nativePlayWhenReady);
+      setSyncedProgress(nextSyncedProgress);
+      setError(null);
+    } catch (syncError) {
+      if (isPlayerNotReadyError(syncError)) {
+        playerSetupPromise = null;
+      }
+      setError(getErrorMessage(syncError));
+    }
+  }, [index, queue, repeatMode, replaceTrackPlayerQueue, sourceQueue]);
+
+  useEffect(() => {
+    if (
+      syncedProgress &&
+      (progress.position !== syncedProgress.position ||
+        progress.duration !== syncedProgress.duration)
+    ) {
+      setSyncedProgress(null);
+    }
+  }, [progress.duration, progress.position, syncedProgress]);
+
+  useEffect(() => {
+    if (
+      syncedPlaybackState !== undefined &&
+      playbackState.state !== undefined &&
+      playbackState.state !== syncedPlaybackState
+    ) {
+      setSyncedPlaybackState(undefined);
+    }
+  }, [playbackState.state, syncedPlaybackState]);
+
+  useEffect(() => {
+    if (
+      syncedPlayWhenReady !== undefined &&
+      playWhenReady !== undefined &&
+      playWhenReady !== syncedPlayWhenReady
+    ) {
+      setSyncedPlayWhenReady(undefined);
+    }
+  }, [playWhenReady, syncedPlayWhenReady]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        syncPlaybackFromNative();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [syncPlaybackFromNative]);
+
   useEffect(() => {
     ensureTrackPlayerReady()
       .then(() =>
@@ -311,12 +531,25 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [
       Event.PlaybackActiveTrackChanged,
       Event.PlaybackError,
+      Event.PlaybackPlayWhenReadyChanged,
       Event.PlaybackQueueEnded,
+      Event.PlaybackState,
     ],
     (event) => {
       if (event.type === Event.PlaybackActiveTrackChanged) {
+        setSyncedProgress(null);
         setIndex(typeof event.index === "number" ? event.index : -1);
         setError(null);
+        return;
+      }
+
+      if (event.type === Event.PlaybackState) {
+        setSyncedPlaybackState(undefined);
+        return;
+      }
+
+      if (event.type === Event.PlaybackPlayWhenReadyChanged) {
+        setSyncedPlayWhenReady(undefined);
         return;
       }
 
@@ -325,8 +558,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (event.type === Event.PlaybackQueueEnded) {
-        setIndex(typeof event.track === "number" ? event.track : -1);
+      if (
+        event.type === Event.PlaybackQueueEnded &&
+        typeof event.track === "number"
+      ) {
+        setIndex(event.track);
       }
     }
   );
