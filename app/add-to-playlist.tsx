@@ -30,15 +30,17 @@ export default function AddToPlaylistScreen() {
     );
   };
 
-  const done = async () => {
+  const done = () => {
     if (!canAdd) {
       return;
     }
 
-    for (const playlistId of selectedIds) {
-      await addTrackToPlaylist(playlistId, trackId);
-    }
     router.back();
+    setTimeout(() => {
+      for (const playlistId of selectedIds) {
+        addTrackToPlaylist(playlistId, trackId);
+      }
+    }, 0);
   };
 
   const renderPlaylist = (playlist: LocalPlaylist) => {

@@ -41,7 +41,7 @@ export default function TrackActionsScreen() {
     }
 
     removeTrackFromPlaylist(playlist.id, track.id).then(() => {
-      router.replace(`/playlist/${encodeURIComponent(playlist.id)}` as Href);
+      router.dismissTo(`/playlist/${encodeURIComponent(playlist.id)}` as Href);
     });
   }, [action, confirmed, playlist, removeTrackFromPlaylist, track]);
 
@@ -65,7 +65,7 @@ export default function TrackActionsScreen() {
         }}
         text={track.liked ? "Unlike Track" : "Like Track"}
       />
-      {!playlist ? (
+      {playlist ? null : (
         <StyledButton
           onPress={() =>
             router.push({
@@ -75,7 +75,7 @@ export default function TrackActionsScreen() {
           }
           text="Add to Playlist"
         />
-      ) : null}
+      )}
       {playlist && canMoveUp ? (
         <StyledButton
           onPress={async () => {

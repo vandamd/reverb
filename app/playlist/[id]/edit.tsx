@@ -1,9 +1,11 @@
+import { launchImageLibraryAsync } from "expo-image-picker";
 import { type Href, router, useLocalSearchParams } from "expo-router";
 import { useEffect } from "react";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
 import { StyledButton } from "@/components/StyledButton";
 import { useLibrary } from "@/contexts/LibraryContext";
+import { saveCoverImage } from "@/utils/cover";
 
 export default function EditPlaylistScreen() {
   const { action, confirmed, id } = useLocalSearchParams<{
@@ -11,7 +13,7 @@ export default function EditPlaylistScreen() {
     confirmed?: string;
     id: string;
   }>();
-  const { deletePlaylist, playlists } = useLibrary();
+  const { deletePlaylist, playlists, setPlaylistCover } = useLibrary();
   const playlist = playlists.find((item) => item.id === id);
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export default function EditPlaylistScreen() {
     }
 
     deletePlaylist(id).then(() => {
-      router.replace("/(tabs)/playlists" as Href);
+      router.dismissTo("/(tabs)/playlists" as Href);
     });
   }, [action, confirmed, deletePlaylist, id]);
 
@@ -45,7 +47,22 @@ export default function EditPlaylistScreen() {
         text="Rename"
       />
       <StyledButton
-        onPress={() => router.push(`${playlistPath}/cover` as Href)}
+        onPress={async () => {
+          const result = await launchImageLibraryAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            mediaTypes: ["images"],
+            quality: 1,
+          });
+
+          if (result.canceled || result.assets.length === 0) {
+            return;
+          }
+
+          const coverUri = await saveCoverImage(playlist.id, result.assets[0]);
+          await setPlaylistCover(playlist.id, coverUri);
+          router.back();
+        }}
         text="Change Cover"
       />
       <StyledButton
