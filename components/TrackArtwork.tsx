@@ -7,6 +7,7 @@ import { n } from "@/utils/scaling";
 
 interface TrackArtworkProps {
   fallbackIcon?: keyof typeof MaterialIcons.glyphMap;
+  recycleOnUriChange?: boolean;
   size: number;
   style?: StyleProp<ViewStyle>;
   uri?: string | null;
@@ -14,6 +15,7 @@ interface TrackArtworkProps {
 
 function TrackArtworkComponent({
   fallbackIcon = "music-note",
+  recycleOnUriChange = true,
   size,
   style,
   uri,
@@ -39,7 +41,7 @@ function TrackArtworkComponent({
         <Image
           cachePolicy="disk"
           contentFit="cover"
-          recyclingKey={uri}
+          recyclingKey={recycleOnUriChange ? uri : null}
           source={uri}
           style={styles.image}
           transition={0}

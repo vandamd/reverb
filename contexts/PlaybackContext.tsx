@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import {
   createContext,
   type ReactNode,
@@ -289,6 +290,22 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         setError(getErrorMessage(setupError));
       });
   }, [repeatMode]);
+
+  useEffect(() => {
+    const artworkUris = [queue[index - 1], queue[index], queue[index + 1]]
+      .map((track) => track?.artworkUri)
+      .filter((uri): uri is string => Boolean(uri));
+
+    if (artworkUris.length === 0) {
+      return;
+    }
+
+    Image.prefetch([...new Set(artworkUris)], {
+      cachePolicy: "memory-disk",
+    }).catch(() => {
+      // Prefetching is only a visual warm-up; playback should never care.
+    });
+  }, [index, queue]);
 
   useTrackPlayerEvents(
     [

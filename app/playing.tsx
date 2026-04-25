@@ -469,6 +469,7 @@ export default function PlayingScreen() {
       <View style={styles.content}>
         <View style={styles.mainContent}>
           <TrackArtwork
+            recycleOnUriChange={false}
             size={200}
             style={styles.albumArt}
             uri={visibleTrack.artworkUri}
