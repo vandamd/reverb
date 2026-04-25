@@ -50,7 +50,7 @@ export const buildAlbums = (tracks: LocalTrack[]): LocalAlbum[] => {
 };
 
 export const getAlbumId = (artist: string, album: string) =>
-  `${encodeURIComponent(artist.trim().toLocaleLowerCase("en-GB"))}::${encodeURIComponent(album.trim().toLocaleLowerCase("en-GB"))}`;
+  `${artist.trim().toLocaleLowerCase("en-GB")}::${album.trim().toLocaleLowerCase("en-GB")}`;
 
 export const getPlaylistTracks = (
   playlist: LocalPlaylist | undefined,
