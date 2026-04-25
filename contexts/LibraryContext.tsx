@@ -25,6 +25,7 @@ import {
 } from "@/services/libraryEffects";
 import {
   buildAlbums,
+  buildTrackSearchIndex,
   getPlaylistTracks,
   searchTracks,
 } from "@/services/librarySelectors";
@@ -59,12 +60,45 @@ interface LibraryContextValue {
     coverUri: string | null
   ) => Promise<void>;
   setTrackLiked: (trackId: string, liked: boolean) => Promise<void>;
+  trackById: Map<string, LocalTrack>;
   tracks: LocalTrack[];
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(
   undefined
 );
+const LibraryStateContext = createContext<
+  | Pick<
+      LibraryContextValue,
+      | "albums"
+      | "error"
+      | "getPlaylistTracks"
+      | "isLoading"
+      | "isScanning"
+      | "likedTracks"
+      | "permissionStatus"
+      | "playlists"
+      | "searchTracks"
+      | "trackById"
+      | "tracks"
+    >
+  | undefined
+>(undefined);
+const LibraryActionsContext = createContext<
+  | Pick<
+      LibraryContextValue,
+      | "addTrackToPlaylist"
+      | "createPlaylist"
+      | "deletePlaylist"
+      | "movePlaylistTrack"
+      | "refreshLibrary"
+      | "removeTrackFromPlaylist"
+      | "renamePlaylist"
+      | "setPlaylistCover"
+      | "setTrackLiked"
+    >
+  | undefined
+>(undefined);
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [tracks, setTracks] = useState<LocalTrack[]>([]);
@@ -77,6 +111,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   >("unknown");
 
   const albums = useMemo(() => buildAlbums(tracks), [tracks]);
+  const trackById = useMemo(
+    () => new Map(tracks.map((track) => [track.id, track])),
+    [tracks]
+  );
+  const searchIndex = useMemo(() => buildTrackSearchIndex(tracks), [tracks]);
   const likedTracks = useMemo(
     () => tracks.filter((track) => track.liked),
     [tracks]
@@ -188,52 +227,76 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const value = useMemo(
+  const actions = useMemo(
     () => ({
-      albums,
+      addTrackToPlaylist,
       createPlaylist,
       deletePlaylist,
+      movePlaylistTrack,
+      refreshLibrary,
+      removeTrackFromPlaylist,
+      renamePlaylist,
+      setPlaylistCover,
+      setTrackLiked,
+    }),
+    [
+      addTrackToPlaylist,
+      createPlaylist,
+      deletePlaylist,
+      movePlaylistTrack,
+      refreshLibrary,
+      removeTrackFromPlaylist,
+      renamePlaylist,
+      setPlaylistCover,
+      setTrackLiked,
+    ]
+  );
+
+  const state = useMemo(
+    () => ({
+      albums,
       error,
       getPlaylistTracks: (playlist: LocalPlaylist | undefined) =>
-        getPlaylistTracks(playlist, tracks),
+        getPlaylistTracks(playlist, tracks, trackById),
       isLoading,
       isScanning,
       likedTracks,
-      movePlaylistTrack,
       permissionStatus,
       playlists,
-      refreshLibrary,
-      renamePlaylist,
-      addTrackToPlaylist,
-      removeTrackFromPlaylist,
-      searchTracks: (query: string) => searchTracks(tracks, query),
-      setPlaylistCover,
-      setTrackLiked,
+      searchTracks: (query: string) => searchTracks(searchIndex, query),
+      trackById,
       tracks,
     }),
     [
       albums,
-      createPlaylist,
-      deletePlaylist,
       error,
       isLoading,
       isScanning,
       likedTracks,
-      movePlaylistTrack,
       permissionStatus,
       playlists,
-      refreshLibrary,
-      renamePlaylist,
-      addTrackToPlaylist,
-      removeTrackFromPlaylist,
-      setPlaylistCover,
-      setTrackLiked,
+      searchIndex,
+      trackById,
       tracks,
     ]
   );
 
+  const value = useMemo(
+    () => ({
+      ...state,
+      ...actions,
+    }),
+    [actions, state]
+  );
+
   return (
-    <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>
+    <LibraryActionsContext.Provider value={actions}>
+      <LibraryStateContext.Provider value={state}>
+        <LibraryContext.Provider value={value}>
+          {children}
+        </LibraryContext.Provider>
+      </LibraryStateContext.Provider>
+    </LibraryActionsContext.Provider>
   );
 }
 
@@ -241,6 +304,22 @@ export const useLibrary = () => {
   const context = useContext(LibraryContext);
   if (!context) {
     throw new Error("useLibrary must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryState = () => {
+  const context = useContext(LibraryStateContext);
+  if (!context) {
+    throw new Error("useLibraryState must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryActions = () => {
+  const context = useContext(LibraryActionsContext);
+  if (!context) {
+    throw new Error("useLibraryActions must be used within LibraryProvider");
   }
   return context;
 };

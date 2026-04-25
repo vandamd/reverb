@@ -4,6 +4,7 @@ export interface LocalTrack {
   album: string;
   albumArtist: string;
   artist: string;
+  artworkCacheKey: string | null;
   artworkUri: string | null;
   discNumber: number | null;
   durationMs: number;

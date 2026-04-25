@@ -1,9 +1,10 @@
 import { type Href, router } from "expo-router";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import ContentContainer from "@/components/ContentContainer";
+import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { MediaListItem } from "@/components/MediaListItem";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryState } from "@/contexts/LibraryContext";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import type { LocalAlbum } from "@/types/music";
 
@@ -26,7 +27,7 @@ const compareAlbumsByTitle = (left: LocalAlbum, right: LocalAlbum) => {
 };
 
 export default function AlbumsScreen() {
-  const { albums, isLoading, isScanning } = useLibrary();
+  const { albums, isLoading, isScanning } = useLibraryState();
   const [sortOrder] = usePersistedState<AlbumsSortOrder>(
     "albums.sort",
     "artist"
@@ -41,48 +42,64 @@ export default function AlbumsScreen() {
     [albums, sortOrder]
   );
 
-  return (
-    <ContentContainer
-      contentGap={8}
-      contentWidth="wide"
-      headerTitle="Albums"
-      hideBackButton
-      leftAction={{
-        icon: "sort",
-        onPress: () => {
-          router.push("/albums-sort" as Href);
-        },
-      }}
-      rightAction={{
-        icon: "multitrack-audio",
-        onPress: () => {
-          router.push("/playing" as Href);
-        },
-      }}
-      scrollable={sortedAlbums.length > 0}
-      style={
-        sortedAlbums.length === 0
-          ? { alignItems: "center", justifyContent: "center" }
-          : undefined
-      }
-    >
-      {sortedAlbums.length === 0 ? (
+  const renderAlbum = useCallback(
+    ({ item: album }: { item: LocalAlbum }) => (
+      <MediaListItem
+        artworkUri={album.artworkUri}
+        onPress={() =>
+          router.push(`/album/${encodeURIComponent(album.id)}` as Href)
+        }
+        subtitle={album.artist}
+        title={album.title}
+      />
+    ),
+    []
+  );
+
+  const headerActions = {
+    leftAction: {
+      icon: "sort" as const,
+      onPress: () => {
+        router.push("/albums-sort" as Href);
+      },
+    },
+    rightAction: {
+      icon: "multitrack-audio" as const,
+      onPress: () => {
+        router.push("/playing" as Href);
+      },
+    },
+  };
+
+  if (sortedAlbums.length === 0) {
+    return (
+      <ContentContainer
+        contentWidth="wide"
+        headerTitle="Albums"
+        hideBackButton
+        leftAction={headerActions.leftAction}
+        rightAction={headerActions.rightAction}
+        scrollable={false}
+        style={{ alignItems: "center", justifyContent: "center" }}
+      >
         <EmptyState
           title={isLoading || isScanning ? "Loading..." : "No albums yet"}
         />
-      ) : (
-        sortedAlbums.map((album) => (
-          <MediaListItem
-            artworkUri={album.artworkUri}
-            key={album.id}
-            onPress={() =>
-              router.push(`/album/${encodeURIComponent(album.id)}` as Href)
-            }
-            subtitle={album.artist}
-            title={album.title}
-          />
-        ))
-      )}
-    </ContentContainer>
+      </ContentContainer>
+    );
+  }
+
+  return (
+    <ContentList
+      contentGap={8}
+      contentWidth="wide"
+      data={sortedAlbums}
+      headerTitle="Albums"
+      hideBackButton
+      keyExtractor={(album) => album.id}
+      leftAction={headerActions.leftAction}
+      renderItem={renderAlbum}
+      rightAction={headerActions.rightAction}
+    />
   );
 }

@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
 import { StyledButton } from "@/components/StyledButton";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
 
 export default function TrackActionsScreen() {
   const { action, confirmed, playlistId, trackId } = useLocalSearchParams<{
@@ -12,15 +12,10 @@ export default function TrackActionsScreen() {
     playlistId?: string;
     trackId: string;
   }>();
-  const {
-    getPlaylistTracks,
-    movePlaylistTrack,
-    playlists,
-    removeTrackFromPlaylist,
-    setTrackLiked,
-    tracks,
-  } = useLibrary();
-  const track = tracks.find((item) => item.id === trackId);
+  const { movePlaylistTrack, removeTrackFromPlaylist, setTrackLiked } =
+    useLibraryActions();
+  const { getPlaylistTracks, playlists, trackById } = useLibraryState();
+  const track = trackById.get(trackId);
   const playlist = playlists.find((item) => item.id === playlistId);
   const playlistTracks = getPlaylistTracks(playlist);
   const playlistTrackIndex = playlistTracks.findIndex(

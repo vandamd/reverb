@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   type GestureResponderEvent,
@@ -15,9 +15,15 @@ import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibrary } from "@/contexts/LibraryContext";
-import { usePlayback } from "@/contexts/PlaybackContext";
+import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
+import {
+  usePlaybackControls,
+  usePlaybackProgress,
+  usePlaybackStatus,
+  usePlaybackTrack,
+} from "@/contexts/PlaybackContext";
 import { formatDuration, getAlbumId } from "@/services/librarySelectors";
+import type { LocalTrack, RepeatMode } from "@/types/music";
 import { n } from "@/utils/scaling";
 
 function MarqueeText({
@@ -120,31 +126,79 @@ const repeatIcon = {
   track: "repeat-one",
 } as const;
 
-export default function PlayingScreen() {
-  const { invertColors } = useInvertColors();
-  const { setTrackLiked, tracks } = useLibrary();
-  const {
-    currentTrack,
-    durationMs,
-    isPlaying,
-    progressMs,
-    repeatMode,
-    seekToPosition,
-    setRepeatMode,
-    setShuffle,
-    shuffle,
-    skipNext,
-    skipPrevious,
-    togglePlayPause,
-  } = usePlayback();
+const ProgressIndicator = memo(function ProgressIndicator({
+  colour,
+  fallbackDurationMs,
+}: {
+  colour: string;
+  fallbackDurationMs: number;
+}) {
+  const { durationMs, progressMs } = usePlaybackProgress();
+  const { seekToPosition } = usePlaybackControls();
   const progressBarWidthRef = useRef<number | null>(null);
-  const colour = invertColors ? "black" : "white";
-  const visibleTrack = currentTrack
-    ? (tracks.find((track) => track.id === currentTrack.id) ?? currentTrack)
-    : null;
-  const activeDurationMs = durationMs || visibleTrack?.durationMs || 0;
+  const activeDurationMs = durationMs || fallbackDurationMs;
   const progressRatio =
     activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
+
+  const handleProgressBarSeek = async (event: GestureResponderEvent) => {
+    if (!(activeDurationMs > 0 && progressBarWidthRef.current)) {
+      return;
+    }
+
+    const seekPositionMs =
+      (event.nativeEvent.locationX / progressBarWidthRef.current) *
+      activeDurationMs;
+    await seekToPosition(seekPositionMs);
+  };
+
+  return (
+    <View style={styles.timeIndicatorContainer}>
+      <HapticPressable
+        onPress={handleProgressBarSeek}
+        style={styles.progressBarPressable}
+      >
+        <View
+          onLayout={(event) => {
+            progressBarWidthRef.current = event.nativeEvent.layout.width;
+          }}
+          style={[styles.progressBarBackground, { backgroundColor: colour }]}
+        >
+          <View
+            style={[
+              styles.progressBarForeground,
+              {
+                backgroundColor: colour,
+                width: `${progressRatio * 100}%`,
+              },
+            ]}
+          />
+        </View>
+      </HapticPressable>
+      <View style={styles.progressBarInfo}>
+        <StyledText style={styles.timeText}>
+          {formatDuration(progressMs)}
+        </StyledText>
+        <StyledText style={styles.timeText}>
+          {formatDuration(activeDurationMs)}
+        </StyledText>
+      </View>
+    </View>
+  );
+});
+
+const TransportControls = memo(function TransportControls({
+  colour,
+  isPlaying,
+  repeatMode,
+  shuffle,
+}: {
+  colour: string;
+  isPlaying: boolean;
+  repeatMode: RepeatMode;
+  shuffle: boolean;
+}) {
+  const { setRepeatMode, setShuffle, skipNext, skipPrevious, togglePlayPause } =
+    usePlaybackControls();
 
   const cycleRepeatMode = () => {
     if (repeatMode === "off") {
@@ -158,18 +212,103 @@ export default function PlayingScreen() {
     setRepeatMode("off");
   };
 
-  const handleProgressBarSeek = async (event: GestureResponderEvent) => {
-    if (!(activeDurationMs > 0 && progressBarWidthRef.current)) {
-      return;
-    }
+  return (
+    <View style={styles.controlsZone}>
+      <View style={styles.musicControls}>
+        <HapticPressable onPress={() => setShuffle(!shuffle)}>
+          <MaterialIcons color={colour} name="shuffle" size={n(30)} />
+          <View
+            style={[
+              styles.shuffleIndicator,
+              shuffle && [
+                styles.activeShuffleIndicator,
+                { backgroundColor: colour },
+              ],
+            ]}
+          />
+        </HapticPressable>
+        <HapticPressable
+          onPress={async () => {
+            await skipPrevious();
+          }}
+        >
+          <MaterialIcons color={colour} name="skip-previous" size={n(52)} />
+        </HapticPressable>
+        <HapticPressable onPress={togglePlayPause}>
+          <MaterialIcons
+            color={colour}
+            name={isPlaying ? "pause" : "play-arrow"}
+            size={n(52)}
+          />
+        </HapticPressable>
+        <HapticPressable
+          onPress={async () => {
+            await skipNext();
+          }}
+        >
+          <MaterialIcons color={colour} name="skip-next" size={n(52)} />
+        </HapticPressable>
+        <HapticPressable onPress={cycleRepeatMode}>
+          <MaterialIcons
+            color={colour}
+            name={repeatIcon[repeatMode]}
+            size={n(30)}
+          />
+          <View
+            style={[
+              styles.shuffleIndicator,
+              repeatMode !== "off" && [
+                styles.activeShuffleIndicator,
+                { backgroundColor: colour },
+              ],
+            ]}
+          />
+        </HapticPressable>
+      </View>
+    </View>
+  );
+});
 
-    const seekPositionMs =
-      (event.nativeEvent.locationX / progressBarWidthRef.current) *
-      activeDurationMs;
-    await seekToPosition(seekPositionMs);
-  };
+const ExtraControls = memo(function ExtraControls({
+  colour,
+  onAddToPlaylist,
+  onToggleLiked,
+  track,
+}: {
+  colour: string;
+  onAddToPlaylist: () => void;
+  onToggleLiked: () => void;
+  track: LocalTrack;
+}) {
+  return (
+    <View style={styles.musicControlsExtra}>
+      <HapticPressable onPress={onToggleLiked}>
+        <MaterialIcons
+          color={colour}
+          name={track.liked ? "favorite" : "favorite-outline"}
+          size={n(30)}
+        />
+      </HapticPressable>
+      <HapticPressable onPress={onAddToPlaylist}>
+        <MaterialIcons color={colour} name="add" size={n(30)} />
+      </HapticPressable>
+    </View>
+  );
+});
 
-  const handleTitlePress = () => {
+export default function PlayingScreen() {
+  const { invertColors } = useInvertColors();
+  const { setTrackLiked } = useLibraryActions();
+  const { trackById } = useLibraryState();
+  const { currentTrack } = usePlaybackTrack();
+  const { isPlaying } = usePlaybackStatus();
+  const { repeatMode, shuffle } = usePlaybackControls();
+  const colour = invertColors ? "black" : "white";
+  const visibleTrack = currentTrack
+    ? (trackById.get(currentTrack.id) ?? currentTrack)
+    : null;
+
+  const handleTitlePress = useCallback(() => {
     if (!visibleTrack) {
       return;
     }
@@ -178,23 +317,23 @@ export default function PlayingScreen() {
         getAlbumId(visibleTrack.albumArtist, visibleTrack.album)
       )}` as Href
     );
-  };
+  }, [visibleTrack]);
 
-  const handleToggleLiked = async () => {
+  const handleToggleLiked = useCallback(async () => {
     if (!visibleTrack) {
       return;
     }
     await setTrackLiked(visibleTrack.id, !visibleTrack.liked);
-  };
+  }, [setTrackLiked, visibleTrack]);
 
-  const handleNavigateToAddToPlaylist = () => {
+  const handleNavigateToAddToPlaylist = useCallback(() => {
     if (!visibleTrack) {
       return;
     }
     router.push(
       `/add-to-playlist?trackId=${encodeURIComponent(visibleTrack.id)}` as Href
     );
-  };
+  }, [visibleTrack]);
 
   const renderEmptyControls = () => (
     <>
@@ -283,110 +422,23 @@ export default function PlayingScreen() {
             </StyledText>
           </View>
 
-          <View style={styles.timeIndicatorContainer}>
-            <HapticPressable
-              onPress={handleProgressBarSeek}
-              style={styles.progressBarPressable}
-            >
-              <View
-                onLayout={(event) => {
-                  progressBarWidthRef.current = event.nativeEvent.layout.width;
-                }}
-                style={[
-                  styles.progressBarBackground,
-                  { backgroundColor: colour },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.progressBarForeground,
-                    {
-                      backgroundColor: colour,
-                      width: `${progressRatio * 100}%`,
-                    },
-                  ]}
-                />
-              </View>
-            </HapticPressable>
-            <View style={styles.progressBarInfo}>
-              <StyledText style={styles.timeText}>
-                {formatDuration(progressMs)}
-              </StyledText>
-              <StyledText style={styles.timeText}>
-                {formatDuration(activeDurationMs)}
-              </StyledText>
-            </View>
-          </View>
-          <View style={styles.controlsZone}>
-            <View style={styles.musicControls}>
-              <HapticPressable onPress={() => setShuffle(!shuffle)}>
-                <MaterialIcons color={colour} name="shuffle" size={n(30)} />
-                <View
-                  style={[
-                    styles.shuffleIndicator,
-                    shuffle && [
-                      styles.activeShuffleIndicator,
-                      { backgroundColor: colour },
-                    ],
-                  ]}
-                />
-              </HapticPressable>
-              <HapticPressable
-                onPress={async () => {
-                  await skipPrevious();
-                }}
-              >
-                <MaterialIcons
-                  color={colour}
-                  name="skip-previous"
-                  size={n(52)}
-                />
-              </HapticPressable>
-              <HapticPressable onPress={togglePlayPause}>
-                <MaterialIcons
-                  color={colour}
-                  name={isPlaying ? "pause" : "play-arrow"}
-                  size={n(52)}
-                />
-              </HapticPressable>
-              <HapticPressable
-                onPress={async () => {
-                  await skipNext();
-                }}
-              >
-                <MaterialIcons color={colour} name="skip-next" size={n(52)} />
-              </HapticPressable>
-              <HapticPressable onPress={cycleRepeatMode}>
-                <MaterialIcons
-                  color={colour}
-                  name={repeatIcon[repeatMode]}
-                  size={n(30)}
-                />
-                <View
-                  style={[
-                    styles.shuffleIndicator,
-                    repeatMode !== "off" && [
-                      styles.activeShuffleIndicator,
-                      { backgroundColor: colour },
-                    ],
-                  ]}
-                />
-              </HapticPressable>
-            </View>
-          </View>
+          <ProgressIndicator
+            colour={colour}
+            fallbackDurationMs={visibleTrack.durationMs}
+          />
+          <TransportControls
+            colour={colour}
+            isPlaying={isPlaying}
+            repeatMode={repeatMode}
+            shuffle={shuffle}
+          />
         </View>
-        <View style={styles.musicControlsExtra}>
-          <HapticPressable onPress={handleToggleLiked}>
-            <MaterialIcons
-              color={colour}
-              name={visibleTrack.liked ? "favorite" : "favorite-outline"}
-              size={n(30)}
-            />
-          </HapticPressable>
-          <HapticPressable onPress={handleNavigateToAddToPlaylist}>
-            <MaterialIcons color={colour} name="add" size={n(30)} />
-          </HapticPressable>
-        </View>
+        <ExtraControls
+          colour={colour}
+          onAddToPlaylist={handleNavigateToAddToPlaylist}
+          onToggleLiked={handleToggleLiked}
+          track={visibleTrack}
+        />
       </View>
     </ContentContainer>
   );

@@ -1,21 +1,48 @@
 import { type Href, router, useLocalSearchParams } from "expo-router";
+import { useCallback } from "react";
 import { StyleSheet, View } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
+import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibrary } from "@/contexts/LibraryContext";
-import { usePlayback } from "@/contexts/PlaybackContext";
+import { useLibraryState } from "@/contexts/LibraryContext";
+import { usePlaybackControls } from "@/contexts/PlaybackContext";
 import { summariseTracks } from "@/services/librarySelectors";
+import type { LocalTrack } from "@/types/music";
 import { n } from "@/utils/scaling";
 
 export default function PlaylistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getPlaylistTracks, playlists } = useLibrary();
-  const { playQueue } = usePlayback();
+  const { getPlaylistTracks, playlists } = useLibraryState();
+  const { playQueue } = usePlaybackControls();
   const playlist = playlists.find((item) => item.id === id);
   const tracks = getPlaylistTracks(playlist);
+  const renderTrack = useCallback(
+    ({ index, item: track }: { index: number; item: LocalTrack }) => (
+      <TrackListItem
+        onLongPress={() => {
+          if (!playlist) {
+            return;
+          }
+          router.push({
+            pathname: "/track-actions",
+            params: {
+              playlistId: playlist.id,
+              trackId: track.id,
+            },
+          });
+        }}
+        onPress={async () => {
+          await playQueue(tracks, index);
+          router.push("/playing" as Href);
+        }}
+        track={track}
+      />
+    ),
+    [playQueue, playlist, tracks]
+  );
 
   if (!playlist) {
     return (
@@ -30,10 +57,30 @@ export default function PlaylistDetailScreen() {
   }
 
   return (
-    <ContentContainer
-      contentGap={28}
+    <ContentList
+      contentGap={8}
       contentWidth="wide"
+      data={tracks}
+      headerComponent={
+        <View style={styles.hero}>
+          <TrackArtwork
+            fallbackIcon="queue-music"
+            size={126}
+            uri={playlist.coverUri}
+          />
+          <View style={styles.heroCopy}>
+            <StyledText numberOfLines={2} style={styles.title}>
+              {playlist.name}
+            </StyledText>
+            <StyledText style={styles.meta}>
+              {summariseTracks(tracks)}
+            </StyledText>
+          </View>
+        </View>
+      }
       headerTitle={playlist.name}
+      keyExtractor={(track) => track.id}
+      renderItem={renderTrack}
       rightAction={{
         icon: "edit",
         onPress: () =>
@@ -41,44 +88,7 @@ export default function PlaylistDetailScreen() {
             `/playlist/${encodeURIComponent(playlist.id)}/edit` as Href
           ),
       }}
-    >
-      <View style={styles.hero}>
-        <TrackArtwork
-          fallbackIcon="queue-music"
-          size={126}
-          uri={playlist.coverUri}
-        />
-        <View style={styles.heroCopy}>
-          <StyledText numberOfLines={2} style={styles.title}>
-            {playlist.name}
-          </StyledText>
-          <StyledText style={styles.meta}>{summariseTracks(tracks)}</StyledText>
-        </View>
-      </View>
-      {tracks.length === 0 ? null : (
-        <View style={styles.tracks}>
-          {tracks.map((track, index) => (
-            <TrackListItem
-              key={track.id}
-              onLongPress={() => {
-                router.push({
-                  pathname: "/track-actions",
-                  params: {
-                    playlistId: playlist.id,
-                    trackId: track.id,
-                  },
-                });
-              }}
-              onPress={async () => {
-                await playQueue(tracks, index);
-                router.push("/playing" as Href);
-              }}
-              track={track}
-            />
-          ))}
-        </View>
-      )}
-    </ContentContainer>
+    />
   );
 }
 
@@ -87,6 +97,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: n(16),
+    marginBottom: n(20),
     width: "100%",
   },
   heroCopy: {
@@ -101,9 +112,5 @@ const styles = StyleSheet.create({
   title: {
     fontSize: n(28),
     lineHeight: n(31),
-  },
-  tracks: {
-    gap: n(8),
-    width: "100%",
   },
 });

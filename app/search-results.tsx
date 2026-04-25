@@ -1,42 +1,39 @@
 import { type Href, router, useLocalSearchParams } from "expo-router";
-import ContentContainer from "@/components/ContentContainer";
+import { useCallback } from "react";
+import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibrary } from "@/contexts/LibraryContext";
-import { usePlayback } from "@/contexts/PlaybackContext";
+import { useLibraryState } from "@/contexts/LibraryContext";
+import { usePlaybackControls } from "@/contexts/PlaybackContext";
+import type { LocalTrack } from "@/types/music";
 
 export default function SearchResultsScreen() {
   const { query } = useLocalSearchParams<{ query: string }>();
-  const { searchTracks } = useLibrary();
-  const { playQueue } = usePlayback();
+  const { searchTracks } = useLibraryState();
+  const { playQueue } = usePlaybackControls();
   const results = searchTracks(query ?? "");
+  const renderTrack = useCallback(
+    ({ index, item: track }: { index: number; item: LocalTrack }) => (
+      <TrackListItem
+        onPress={async () => {
+          await playQueue(results, index);
+          router.push("/playing" as Href);
+        }}
+        track={track}
+      />
+    ),
+    [playQueue, results]
+  );
 
   return (
-    <ContentContainer
+    <ContentList
       contentGap={8}
       contentWidth="wide"
+      data={results}
+      emptyComponent={<EmptyState title="No results" />}
       headerTitle={query ? `Search: ${query}` : "Search"}
-      scrollable={results.length > 0}
-      style={
-        results.length === 0
-          ? { alignItems: "center", justifyContent: "center" }
-          : undefined
-      }
-    >
-      {results.length === 0 ? (
-        <EmptyState title="No results" />
-      ) : (
-        results.map((track, index) => (
-          <TrackListItem
-            key={track.id}
-            onPress={async () => {
-              await playQueue(results, index);
-              router.push("/playing" as Href);
-            }}
-            track={track}
-          />
-        ))
-      )}
-    </ContentContainer>
+      keyExtractor={(track) => track.id}
+      renderItem={renderTrack}
+    />
   );
 }

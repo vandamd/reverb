@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
@@ -14,7 +15,7 @@ interface MediaListItemProps {
   title: string;
 }
 
-export function MediaListItem({
+function MediaListItemComponent({
   artworkUri,
   fallbackIcon = "album",
   onPress,
@@ -53,12 +54,15 @@ export function MediaListItem({
   );
 }
 
+export const MediaListItem = memo(MediaListItemComponent);
+
 const styles = StyleSheet.create({
   container: {
     minHeight: n(50),
     paddingVertical: n(0),
     alignItems: "center",
     flexDirection: "row",
+    width: "100%",
   },
   textContainer: {
     flex: 1,

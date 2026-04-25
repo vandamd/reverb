@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
 import { StyledButton } from "@/components/StyledButton";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
 
 export default function EditPlaylistScreen() {
   const { action, confirmed, id } = useLocalSearchParams<{
@@ -11,7 +11,8 @@ export default function EditPlaylistScreen() {
     confirmed?: string;
     id: string;
   }>();
-  const { deletePlaylist, playlists } = useLibrary();
+  const { deletePlaylist } = useLibraryActions();
+  const { playlists } = useLibraryState();
   const playlist = playlists.find((item) => item.id === id);
   const isDeletingPlaylist =
     confirmed === "true" && action === "deletePlaylist";

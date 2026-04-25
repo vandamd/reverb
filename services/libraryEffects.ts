@@ -39,7 +39,8 @@ export const refreshCatalogueEffect = Effect.tryPromise({
       };
     }
 
-    const scannedTracks = await TunesScanner.scanLibrary();
+    const existingTracks = await getTracks();
+    const scannedTracks = await TunesScanner.scanLibrary(existingTracks);
     const [tracks, playlists] = await Promise.all([
       replaceScannedTracks(scannedTracks),
       getPlaylists(),

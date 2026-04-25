@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
@@ -18,7 +19,7 @@ interface TrackListItemProps {
   track: LocalTrack;
 }
 
-export function TrackListItem({
+function TrackListItemComponent({
   indexLabel,
   onLongPress,
   onPress,
@@ -85,6 +86,8 @@ export function TrackListItem({
   );
 }
 
+export const TrackListItem = memo(TrackListItemComponent);
+
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
@@ -142,10 +145,10 @@ const styles = StyleSheet.create({
     paddingLeft: n(1),
   },
   trackName: {
-    lineHeight: n(29),
+    lineHeight: n(24),
   },
   numberedTrackName: {
-    fontSize: n(26),
+    fontSize: n(22),
   },
   mediaTrackName: {
     fontSize: n(22),

@@ -20,6 +20,7 @@
     "expo-file-system": "~55.0.17",
     "expo-font": "^55.0.4",
     "expo-haptics": "~55.0.0",
+    "expo-image": "~55.0.9",
     "expo-image-picker": "~55.0.19",
     "expo-linking": "~55.0.0",
     "expo-media-library": "~55.0.15",

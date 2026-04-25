@@ -4,13 +4,13 @@ import { StyleSheet, View } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { TextInput } from "@/components/TextInput";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryActions } from "@/contexts/LibraryContext";
 import { n } from "@/utils/scaling";
 
 export default function NewPlaylistScreen() {
   const { coverUri } = useLocalSearchParams<{ coverUri?: string }>();
   const [name, setName] = useState("");
-  const { createPlaylist } = useLibrary();
+  const { createPlaylist } = useLibraryActions();
 
   const save = async () => {
     if (!name.trim()) {

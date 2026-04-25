@@ -5,6 +5,7 @@ interface TrackRow {
   album: string;
   album_artist: string;
   artist: string;
+  artwork_cache_key: string | null;
   artwork_uri: string | null;
   disc_number: number | null;
   duration_ms: number;
@@ -53,6 +54,7 @@ const openDatabase = async () => {
       mime_type TEXT,
       size_bytes INTEGER NOT NULL,
       modified_at_ms INTEGER NOT NULL,
+      artwork_cache_key TEXT,
       artwork_uri TEXT,
       liked INTEGER NOT NULL DEFAULT 0
     );
@@ -73,6 +75,15 @@ const openDatabase = async () => {
     );
   `);
   await ensureColumn(database, "playlists", "cover_uri", "TEXT");
+  await ensureColumn(database, "tracks", "artwork_cache_key", "TEXT");
+  await database.execAsync(`
+    CREATE INDEX IF NOT EXISTS tracks_album_sort_idx
+      ON tracks (album_artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS tracks_liked_idx ON tracks (liked);
+    CREATE INDEX IF NOT EXISTS playlist_tracks_order_idx
+      ON playlist_tracks (playlist_id, position);
+    CREATE INDEX IF NOT EXISTS playlist_tracks_track_idx ON playlist_tracks (track_id);
+  `);
   return database;
 };
 
@@ -102,6 +113,7 @@ const toLocalTrack = (row: TrackRow): LocalTrack => ({
   artist: row.artist,
   album: row.album,
   albumArtist: row.album_artist,
+  artworkCacheKey: row.artwork_cache_key,
   durationMs: row.duration_ms,
   trackNumber: row.track_number,
   discNumber: row.disc_number,
@@ -148,8 +160,8 @@ export const replaceScannedTracks = async (
       INSERT INTO tracks (
         id, uri, file_name, folder_path, title, artist, album, album_artist,
         duration_ms, track_number, disc_number, year, mime_type, size_bytes,
-        modified_at_ms, artwork_uri, liked
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        modified_at_ms, artwork_cache_key, artwork_uri, liked
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         uri = excluded.uri,
         file_name = excluded.file_name,
@@ -165,6 +177,7 @@ export const replaceScannedTracks = async (
         mime_type = excluded.mime_type,
         size_bytes = excluded.size_bytes,
         modified_at_ms = excluded.modified_at_ms,
+        artwork_cache_key = excluded.artwork_cache_key,
         artwork_uri = excluded.artwork_uri,
         liked = tracks.liked
     `);
@@ -186,6 +199,7 @@ export const replaceScannedTracks = async (
           track.mimeType,
           track.sizeBytes,
           track.modifiedAtMs,
+          track.artworkCacheKey ?? null,
           track.artworkUri ?? null,
           likedById.get(track.id) ?? 0,
         ]);
@@ -194,14 +208,20 @@ export const replaceScannedTracks = async (
       await upsert.finalizeAsync();
     }
 
-    for (const row of existingRows) {
-      if (!scannedIds.has(row.id)) {
-        await transaction.runAsync("DELETE FROM tracks WHERE id = ?", row.id);
-        await transaction.runAsync(
-          "DELETE FROM playlist_tracks WHERE track_id = ?",
-          row.id
-        );
-      }
+    const removedIds = existingRows
+      .map((row) => row.id)
+      .filter((id) => !scannedIds.has(id));
+    for (let index = 0; index < removedIds.length; index += 500) {
+      const ids = removedIds.slice(index, index + 500);
+      const placeholders = ids.map(() => "?").join(", ");
+      await transaction.runAsync(
+        `DELETE FROM playlist_tracks WHERE track_id IN (${placeholders})`,
+        ids
+      );
+      await transaction.runAsync(
+        `DELETE FROM tracks WHERE id IN (${placeholders})`,
+        ids
+      );
     }
   });
 

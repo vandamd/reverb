@@ -39,6 +39,35 @@ interface PlaybackContextValue {
 const PlaybackContext = createContext<PlaybackContextValue | undefined>(
   undefined
 );
+const PlaybackTrackContext = createContext<
+  | Pick<
+      PlaybackContextValue,
+      "currentTrack" | "durationMs" | "error" | "index" | "queue"
+    >
+  | undefined
+>(undefined);
+const PlaybackProgressContext = createContext<
+  | Pick<PlaybackContextValue, "durationMs" | "isPlaying" | "progressMs">
+  | undefined
+>(undefined);
+const PlaybackStatusContext = createContext<
+  Pick<PlaybackContextValue, "isPlaying"> | undefined
+>(undefined);
+const PlaybackControlsContext = createContext<
+  | Pick<
+      PlaybackContextValue,
+      | "playQueue"
+      | "repeatMode"
+      | "seekToPosition"
+      | "setRepeatMode"
+      | "setShuffle"
+      | "shuffle"
+      | "skipNext"
+      | "skipPrevious"
+      | "togglePlayPause"
+    >
+  | undefined
+>(undefined);
 
 const initialStatus = {
   didJustFinish: false,
@@ -210,10 +239,58 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     await playerRef.current?.seekTo(Math.max(0, progressMs) / 1000);
   }, []);
 
+  const durationMs = status.durationMs || currentTrack?.durationMs || 0;
+  const trackValue = useMemo(
+    () => ({
+      currentTrack,
+      durationMs,
+      error,
+      index,
+      queue,
+    }),
+    [currentTrack, durationMs, error, index, queue]
+  );
+  const progressValue = useMemo(
+    () => ({
+      durationMs,
+      isPlaying: status.isPlaying,
+      progressMs: status.progressMs,
+    }),
+    [durationMs, status.isPlaying, status.progressMs]
+  );
+  const statusValue = useMemo(
+    () => ({
+      isPlaying: status.isPlaying,
+    }),
+    [status.isPlaying]
+  );
+  const controlsValue = useMemo(
+    () => ({
+      playQueue,
+      repeatMode,
+      seekToPosition,
+      setRepeatMode,
+      setShuffle,
+      shuffle,
+      skipNext,
+      skipPrevious,
+      togglePlayPause,
+    }),
+    [
+      playQueue,
+      repeatMode,
+      seekToPosition,
+      shuffle,
+      skipNext,
+      skipPrevious,
+      togglePlayPause,
+    ]
+  );
+
   const value = useMemo(
     () => ({
       currentTrack,
-      durationMs: status.durationMs || currentTrack?.durationMs || 0,
+      durationMs,
       error,
       index,
       isPlaying: status.isPlaying,
@@ -231,6 +308,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }),
     [
       currentTrack,
+      durationMs,
       error,
       index,
       playQueue,
@@ -240,7 +318,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       shuffle,
       skipNext,
       skipPrevious,
-      status.durationMs,
       status.isPlaying,
       status.progressMs,
       togglePlayPause,
@@ -248,9 +325,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <PlaybackContext.Provider value={value}>
-      {children}
-    </PlaybackContext.Provider>
+    <PlaybackControlsContext.Provider value={controlsValue}>
+      <PlaybackTrackContext.Provider value={trackValue}>
+        <PlaybackStatusContext.Provider value={statusValue}>
+          <PlaybackProgressContext.Provider value={progressValue}>
+            <PlaybackContext.Provider value={value}>
+              {children}
+            </PlaybackContext.Provider>
+          </PlaybackProgressContext.Provider>
+        </PlaybackStatusContext.Provider>
+      </PlaybackTrackContext.Provider>
+    </PlaybackControlsContext.Provider>
   );
 }
 
@@ -258,6 +343,38 @@ export const usePlayback = () => {
   const context = useContext(PlaybackContext);
   if (!context) {
     throw new Error("usePlayback must be used within PlaybackProvider");
+  }
+  return context;
+};
+
+export const usePlaybackTrack = () => {
+  const context = useContext(PlaybackTrackContext);
+  if (!context) {
+    throw new Error("usePlaybackTrack must be used within PlaybackProvider");
+  }
+  return context;
+};
+
+export const usePlaybackProgress = () => {
+  const context = useContext(PlaybackProgressContext);
+  if (!context) {
+    throw new Error("usePlaybackProgress must be used within PlaybackProvider");
+  }
+  return context;
+};
+
+export const usePlaybackStatus = () => {
+  const context = useContext(PlaybackStatusContext);
+  if (!context) {
+    throw new Error("usePlaybackStatus must be used within PlaybackProvider");
+  }
+  return context;
+};
+
+export const usePlaybackControls = () => {
+  const context = useContext(PlaybackControlsContext);
+  if (!context) {
+    throw new Error("usePlaybackControls must be used within PlaybackProvider");
   }
   return context;
 };

@@ -1,50 +1,49 @@
 import { type Href, router } from "expo-router";
-import ContentContainer from "@/components/ContentContainer";
+import { useCallback } from "react";
+import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibrary } from "@/contexts/LibraryContext";
-import { usePlayback } from "@/contexts/PlaybackContext";
+import { useLibraryState } from "@/contexts/LibraryContext";
+import { usePlaybackControls } from "@/contexts/PlaybackContext";
+import type { LocalTrack } from "@/types/music";
 
 export default function LikedSongsScreen() {
-  const { isLoading, isScanning, likedTracks } = useLibrary();
-  const { playQueue } = usePlayback();
+  const { isLoading, isScanning, likedTracks } = useLibraryState();
+  const { playQueue } = usePlaybackControls();
+  const renderTrack = useCallback(
+    ({ index, item: track }: { index: number; item: LocalTrack }) => (
+      <TrackListItem
+        onPress={async () => {
+          await playQueue(likedTracks, index);
+          router.push("/playing" as Href);
+        }}
+        showLikedIndicator={false}
+        track={track}
+      />
+    ),
+    [likedTracks, playQueue]
+  );
 
   return (
-    <ContentContainer
+    <ContentList
       contentGap={8}
       contentWidth="wide"
+      data={likedTracks}
+      emptyComponent={
+        <EmptyState
+          title={isLoading || isScanning ? "Loading..." : "No liked songs yet"}
+        />
+      }
       headerTitle="Liked Songs"
       hideBackButton
+      keyExtractor={(track) => track.id}
+      renderItem={renderTrack}
       rightAction={{
         icon: "multitrack-audio",
         onPress: () => {
           router.push("/playing" as Href);
         },
       }}
-      scrollable={likedTracks.length > 0}
-      style={
-        likedTracks.length === 0
-          ? { alignItems: "center", justifyContent: "center" }
-          : undefined
-      }
-    >
-      {likedTracks.length === 0 ? (
-        <EmptyState
-          title={isLoading || isScanning ? "Loading..." : "No liked songs yet"}
-        />
-      ) : (
-        likedTracks.map((track, index) => (
-          <TrackListItem
-            key={track.id}
-            onPress={async () => {
-              await playQueue(likedTracks, index);
-              router.push("/playing" as Href);
-            }}
-            showLikedIndicator={false}
-            track={track}
-          />
-        ))
-      )}
-    </ContentContainer>
+    />
   );
 }

@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -15,10 +17,12 @@ import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
+import java.security.MessageDigest
 import kotlin.math.max
 
 class TunesScannerModule : Module() {
   private val tunesRoot = "Music/Tunes/"
+  private val artworkMaxSize = 512
 
   override fun definition() = ModuleDefinition {
     Name("TunesScanner")
@@ -31,12 +35,12 @@ class TunesScannerModule : Module() {
       Permissions.askForPermissionsWithPermissionsManager(appContext.permissions, promise, readPermission())
     }
 
-    AsyncFunction("scanLibrary") Coroutine { ->
+    AsyncFunction("scanLibrary") Coroutine { existingTracks: List<Map<String, Any?>>? ->
       val context = requireContext()
       if (!hasReadPermission(context)) {
         throw SecurityException("Tunes needs audio permission to scan Music/Tunes.")
       }
-      scanTunes(context)
+      scanTunes(context, existingTracks.orEmpty().associateBy { it["id"]?.toString().orEmpty() })
     }
 
     AsyncFunction("copyTrackToCache") Coroutine { contentUri: String, fileName: String ->
@@ -61,7 +65,10 @@ class TunesScannerModule : Module() {
   private fun hasReadPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, readPermission()) == PackageManager.PERMISSION_GRANTED
 
-  private fun scanTunes(context: Context): List<Map<String, Any?>> {
+  private fun scanTunes(
+    context: Context,
+    existingTracks: Map<String, Map<String, Any?>>
+  ): List<Map<String, Any?>> {
     val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
     val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       arrayOf(
@@ -129,15 +136,50 @@ class TunesScannerModule : Module() {
         val mediaId = cursor.getLong(idColumn)
         val contentUri = ContentUris.withAppendedId(collection, mediaId)
         val fileName = cursor.getNullableString(fileNameColumn) ?: "Track $mediaId"
-        val metadata = readMetadata(context, contentUri, mediaId)
-        val mediaStoreTrack = cursor.getNullableInt(trackColumn)
-        val discNumber = metadata.discNumber ?: mediaStoreTrack?.let { if (it >= 1000) max(1, it / 1000) else null }
-        val trackNumber = metadata.trackNumber ?: mediaStoreTrack?.let { if (it >= 1000) it % 1000 else it }
         val relativePath = if (relativePathColumn >= 0) {
           cursor.getNullableString(relativePathColumn) ?: tunesRoot
         } else {
           tunesRoot
         }
+        val sizeBytes = cursor.getNullableLong(sizeColumn) ?: 0L
+        val modifiedAtMs = (cursor.getNullableLong(modifiedColumn) ?: 0L) * 1000L
+        val existingTrack = existingTracks[mediaId.toString()]
+
+        if (
+          existingTrack != null &&
+          existingTrack["sizeBytes"].asLongOrNull() == sizeBytes &&
+          existingTrack["modifiedAtMs"].asLongOrNull() == modifiedAtMs
+        ) {
+          tracks.add(
+            mapOf(
+              "id" to mediaId.toString(),
+              "contentUri" to contentUri.toString(),
+              "fileName" to fileName,
+              "relativePath" to relativePath,
+              "title" to existingTrack["title"].asStringOrNull().orDefault(fileName.titleFromFileName()),
+              "artist" to existingTrack["artist"].asStringOrNull().orDefault("Unknown Artist"),
+              "album" to existingTrack["album"].asStringOrNull().orDefault("Unknown Album"),
+              "albumArtist" to existingTrack["albumArtist"].asStringOrNull().orDefault(
+                existingTrack["artist"].asStringOrNull().orDefault("Unknown Artist")
+              ),
+              "durationMs" to (existingTrack["durationMs"].asLongOrNull() ?: cursor.getNullableLong(durationColumn) ?: 0L),
+              "trackNumber" to existingTrack["trackNumber"].asIntOrNull(),
+              "discNumber" to existingTrack["discNumber"].asIntOrNull(),
+              "year" to existingTrack["year"].asIntOrNull(),
+              "mimeType" to cursor.getNullableString(mimeColumn),
+              "sizeBytes" to sizeBytes,
+              "modifiedAtMs" to modifiedAtMs,
+              "artworkUri" to existingTrack["artworkUri"].asStringOrNull(),
+              "artworkCacheKey" to existingTrack["artworkCacheKey"].asStringOrNull(),
+            )
+          )
+          continue
+        }
+
+        val metadata = readMetadata(context, contentUri)
+        val mediaStoreTrack = cursor.getNullableInt(trackColumn)
+        val discNumber = metadata.discNumber ?: mediaStoreTrack?.let { if (it >= 1000) max(1, it / 1000) else null }
+        val trackNumber = metadata.trackNumber ?: mediaStoreTrack?.let { if (it >= 1000) it % 1000 else it }
 
         tracks.add(
           mapOf(
@@ -154,9 +196,10 @@ class TunesScannerModule : Module() {
             "discNumber" to discNumber,
             "year" to (metadata.year ?: cursor.getNullableInt(yearColumn)),
             "mimeType" to cursor.getNullableString(mimeColumn),
-            "sizeBytes" to (cursor.getNullableLong(sizeColumn) ?: 0L),
-            "modifiedAtMs" to ((cursor.getNullableLong(modifiedColumn) ?: 0L) * 1000L),
+            "sizeBytes" to sizeBytes,
+            "modifiedAtMs" to modifiedAtMs,
             "artworkUri" to metadata.artworkUri,
+            "artworkCacheKey" to metadata.artworkCacheKey,
           )
         )
       }
@@ -165,16 +208,14 @@ class TunesScannerModule : Module() {
     return tracks
   }
 
-  private fun readMetadata(context: Context, uri: Uri, mediaId: Long): TrackMetadata {
+  private fun readMetadata(context: Context, uri: Uri): TrackMetadata {
     val retriever = MediaMetadataRetriever()
     return try {
       retriever.setDataSource(context, uri)
-      val artworkUri = retriever.embeddedPicture?.let { bytes ->
-        val artworkDir = File(context.cacheDir, "tunes-artwork")
-        artworkDir.mkdirs()
-        val artworkFile = File(artworkDir, "$mediaId.jpg")
-        artworkFile.writeBytes(bytes)
-        Uri.fromFile(artworkFile).toString()
+      val embeddedPicture = retriever.embeddedPicture
+      val artworkCacheKey = embeddedPicture?.let { bytes -> sha256(bytes) }
+      val artworkUri = embeddedPicture?.let { bytes ->
+        artworkCacheKey?.let { cacheKey -> writeArtworkThumbnail(context, cacheKey, bytes) }
       }
       TrackMetadata(
         title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).blankToNull(),
@@ -189,6 +230,7 @@ class TunesScannerModule : Module() {
             ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
         ),
         artworkUri = artworkUri,
+        artworkCacheKey = artworkCacheKey,
       )
     } catch (_: Exception) {
       TrackMetadata()
@@ -214,9 +256,64 @@ class TunesScannerModule : Module() {
     return Uri.fromFile(destination).toString()
   }
 
+  private fun writeArtworkThumbnail(context: Context, cacheKey: String, bytes: ByteArray): String? {
+    val artworkDir = File(context.filesDir, "tunes-artwork")
+    artworkDir.mkdirs()
+    val artworkFile = File(artworkDir, "$cacheKey.jpg")
+    if (artworkFile.exists() && artworkFile.length() > 0) {
+      return Uri.fromFile(artworkFile).toString()
+    }
+
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    val scale = minOf(
+      1f,
+      artworkMaxSize.toFloat() / max(bitmap.width, bitmap.height).toFloat()
+    )
+    val outputBitmap = if (scale < 1f) {
+      Bitmap.createScaledBitmap(
+        bitmap,
+        max(1, (bitmap.width * scale).toInt()),
+        max(1, (bitmap.height * scale).toInt()),
+        true
+      )
+    } else {
+      bitmap
+    }
+
+    artworkFile.outputStream().use { output ->
+      outputBitmap.compress(Bitmap.CompressFormat.JPEG, 86, output)
+    }
+    if (outputBitmap !== bitmap) {
+      outputBitmap.recycle()
+    }
+    bitmap.recycle()
+    return Uri.fromFile(artworkFile).toString()
+  }
+
+  private fun sha256(bytes: ByteArray): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+    return digest.joinToString("") { "%02x".format(it) }
+  }
+
   private fun String?.blankToNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
   private fun String.titleFromFileName(): String = substringBeforeLast(".").replace("_", " ")
+
+  private fun String?.orDefault(defaultValue: String): String = this ?: defaultValue
+
+  private fun Any?.asStringOrNull(): String? = (this as? String)?.blankToNull()
+
+  private fun Any?.asLongOrNull(): Long? = when (this) {
+    is Number -> toLong()
+    is String -> toLongOrNull()
+    else -> null
+  }
+
+  private fun Any?.asIntOrNull(): Int? = when (this) {
+    is Number -> toInt()
+    is String -> toIntOrNull()
+    else -> null
+  }
 
   private fun parseOrdinal(value: String?): Int? =
     value.blankToNull()
@@ -251,4 +348,5 @@ data class TrackMetadata(
   val discNumber: Int? = null,
   val year: Int? = null,
   val artworkUri: String? = null,
+  val artworkCacheKey: String? = null,
 )

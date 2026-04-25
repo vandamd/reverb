@@ -1,11 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import {
-  Image,
-  type StyleProp,
-  StyleSheet,
-  View,
-  type ViewStyle,
-} from "react-native";
+import { Image } from "expo-image";
+import { memo } from "react";
+import { type StyleProp, StyleSheet, View, type ViewStyle } from "react-native";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { n } from "@/utils/scaling";
 
@@ -16,7 +12,7 @@ interface TrackArtworkProps {
   uri?: string | null;
 }
 
-export function TrackArtwork({
+function TrackArtworkComponent({
   fallbackIcon = "music-note",
   size,
   style,
@@ -40,7 +36,14 @@ export function TrackArtwork({
       ]}
     >
       {uri ? (
-        <Image fadeDuration={0} source={{ uri }} style={styles.image} />
+        <Image
+          cachePolicy="disk"
+          contentFit="cover"
+          recyclingKey={uri}
+          source={uri}
+          style={styles.image}
+          transition={0}
+        />
       ) : (
         <MaterialIcons
           color={colour}
@@ -51,6 +54,8 @@ export function TrackArtwork({
     </View>
   );
 }
+
+export const TrackArtwork = memo(TrackArtworkComponent);
 
 const styles = StyleSheet.create({
   container: {

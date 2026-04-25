@@ -24,7 +24,7 @@ import { Header } from "@/components/Header";
 import { StyledText } from "@/components/StyledText";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryActions } from "@/contexts/LibraryContext";
 import { saveCoverImage } from "@/utils/cover";
 import { n } from "@/utils/scaling";
 
@@ -65,7 +65,7 @@ export default function PlaylistCoverScreen() {
     id: string;
     returnPath?: string;
   }>();
-  const { setPlaylistCover } = useLibrary();
+  const { setPlaylistCover } = useLibraryActions();
   const { width } = useWindowDimensions();
   const [photos, setPhotos] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

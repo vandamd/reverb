@@ -6,6 +6,8 @@ import { getInactiveNavbarIconColour } from "@/utils/colours";
 import { n } from "@/utils/scaling";
 import { HapticPressable } from "./HapticPressable";
 
+export const NAVBAR_HEIGHT = n(70);
+
 export interface TabConfigItem {
   iconName: keyof typeof MaterialIcons.glyphMap;
   name: string;
@@ -62,6 +64,7 @@ const styles = StyleSheet.create({
   navbar: {
     flexDirection: "row",
     alignItems: "center",
+    height: NAVBAR_HEIGHT,
     justifyContent: "space-between",
     paddingVertical: n(11),
     paddingHorizontal: n(20),

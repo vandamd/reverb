@@ -54,28 +54,42 @@ export const getAlbumId = (artist: string, album: string) =>
 
 export const getPlaylistTracks = (
   playlist: LocalPlaylist | undefined,
-  tracks: LocalTrack[]
+  tracks: LocalTrack[],
+  trackById = new Map(tracks.map((track) => [track.id, track]))
 ) => {
   if (!playlist) {
     return [];
   }
-  const trackById = new Map(tracks.map((track) => [track.id, track]));
   return playlist.trackIds
     .map((trackId) => trackById.get(trackId))
     .filter((track): track is LocalTrack => Boolean(track));
 };
 
-export const searchTracks = (tracks: LocalTrack[], query: string) => {
+export const buildTrackSearchIndex = (tracks: LocalTrack[]) =>
+  tracks.map((track) => ({
+    haystack: [
+      track.title,
+      track.artist,
+      track.album,
+      track.albumArtist,
+      track.fileName,
+    ]
+      .join(" ")
+      .toLocaleLowerCase("en-GB"),
+    track,
+  }));
+
+export const searchTracks = (
+  searchIndex: ReturnType<typeof buildTrackSearchIndex>,
+  query: string
+) => {
   const normalisedQuery = query.trim().toLocaleLowerCase("en-GB");
   if (!normalisedQuery) {
     return [];
   }
-  return tracks.filter((track) =>
-    [track.title, track.artist, track.album, track.albumArtist, track.fileName]
-      .join(" ")
-      .toLocaleLowerCase("en-GB")
-      .includes(normalisedQuery)
-  );
+  return searchIndex
+    .filter((entry) => entry.haystack.includes(normalisedQuery))
+    .map((entry) => entry.track);
 };
 
 export const formatDuration = (durationMs: number) => {

@@ -1,34 +1,36 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
+import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibrary } from "@/contexts/LibraryContext";
+import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
 import { summariseTracks } from "@/services/librarySelectors";
 import type { LocalPlaylist } from "@/types/music";
 import { n } from "@/utils/scaling";
 
 export default function AddToPlaylistScreen() {
   const { trackId } = useLocalSearchParams<{ trackId: string }>();
-  const { addTrackToPlaylist, getPlaylistTracks, playlists } = useLibrary();
+  const { addTrackToPlaylist } = useLibraryActions();
+  const { getPlaylistTracks, playlists } = useLibraryState();
   const { invertColors } = useInvertColors();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const textColor = invertColors ? "black" : "white";
   const canAdd = Boolean(trackId) && selectedIds.length > 0;
 
-  const togglePlaylist = (playlistId: string) => {
+  const togglePlaylist = useCallback((playlistId: string) => {
     setSelectedIds((current) =>
       current.includes(playlistId)
         ? current.filter((id) => id !== playlistId)
         : [...current, playlistId]
     );
-  };
+  }, []);
 
   const done = () => {
     if (!canAdd) {
@@ -43,38 +45,69 @@ export default function AddToPlaylistScreen() {
     }, 0);
   };
 
-  const renderPlaylist = (playlist: LocalPlaylist) => {
-    const tracks = getPlaylistTracks(playlist);
-    const isSelected = selectedIds.includes(playlist.id);
+  const data = useMemo(
+    () => [{ id: "create", kind: "create" as const }, ...playlists],
+    [playlists]
+  );
+  const renderPlaylist = useCallback(
+    ({ item }: { item: LocalPlaylist | { id: string; kind: "create" } }) => {
+      if ("kind" in item) {
+        return (
+          <HapticPressable
+            onPress={() => router.push("/playlist/new" as Href)}
+            style={styles.listItem}
+          >
+            <View
+              style={[
+                styles.iconBox,
+                { backgroundColor: invertColors ? "black" : "#282828" },
+              ]}
+            >
+              <MaterialIcons color="white" name="add" size={n(24)} />
+            </View>
+            <View style={styles.textContainer}>
+              <StyledText style={styles.listName}>
+                Create new playlist
+              </StyledText>
+            </View>
+          </HapticPressable>
+        );
+      }
 
-    return (
-      <HapticPressable
-        key={playlist.id}
-        onPress={() => togglePlaylist(playlist.id)}
-        style={styles.listItem}
-      >
-        <TrackArtwork
-          fallbackIcon="queue-music"
-          size={50}
-          style={styles.artwork}
-          uri={playlist.coverUri}
-        />
-        <View style={styles.textContainer}>
-          <StyledText numberOfLines={1} style={styles.listName}>
-            {playlist.name}
-          </StyledText>
-          <StyledText numberOfLines={1} style={styles.subtitle}>
-            {summariseTracks(tracks)}
-          </StyledText>
-        </View>
-        <MaterialIcons
-          color={textColor}
-          name={isSelected ? "radio-button-checked" : "radio-button-unchecked"}
-          size={n(24)}
-        />
-      </HapticPressable>
-    );
-  };
+      const tracks = getPlaylistTracks(item);
+      const isSelected = selectedIds.includes(item.id);
+
+      return (
+        <HapticPressable
+          onPress={() => togglePlaylist(item.id)}
+          style={styles.listItem}
+        >
+          <TrackArtwork
+            fallbackIcon="queue-music"
+            size={50}
+            style={styles.artwork}
+            uri={item.coverUri}
+          />
+          <View style={styles.textContainer}>
+            <StyledText numberOfLines={1} style={styles.listName}>
+              {item.name}
+            </StyledText>
+            <StyledText numberOfLines={1} style={styles.subtitle}>
+              {summariseTracks(tracks)}
+            </StyledText>
+          </View>
+          <MaterialIcons
+            color={textColor}
+            name={
+              isSelected ? "radio-button-checked" : "radio-button-unchecked"
+            }
+            size={n(24)}
+          />
+        </HapticPressable>
+      );
+    },
+    [getPlaylistTracks, invertColors, selectedIds, textColor, togglePlaylist]
+  );
 
   if (!trackId) {
     return (
@@ -89,10 +122,11 @@ export default function AddToPlaylistScreen() {
   }
 
   return (
-    <ContentContainer
+    <ContentList
       bottomPadding={0}
       contentGap={8}
       contentWidth="wide"
+      data={data}
       footer={
         <View style={styles.doneContainer}>
           <HapticPressable
@@ -105,25 +139,9 @@ export default function AddToPlaylistScreen() {
         </View>
       }
       headerTitle="Add to Playlist"
-    >
-      <HapticPressable
-        onPress={() => router.push("/playlist/new" as Href)}
-        style={styles.listItem}
-      >
-        <View
-          style={[
-            styles.iconBox,
-            { backgroundColor: invertColors ? "black" : "#282828" },
-          ]}
-        >
-          <MaterialIcons color="white" name="add" size={n(24)} />
-        </View>
-        <View style={styles.textContainer}>
-          <StyledText style={styles.listName}>Create new playlist</StyledText>
-        </View>
-      </HapticPressable>
-      {playlists.map(renderPlaylist)}
-    </ContentContainer>
+      keyExtractor={(item) => item.id}
+      renderItem={renderPlaylist}
+    />
   );
 }
 
