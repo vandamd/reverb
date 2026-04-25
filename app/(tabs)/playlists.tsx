@@ -2,12 +2,12 @@ import { type Href, router } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { ContentList } from "@/components/ContentList";
 import { MediaListItem } from "@/components/MediaListItem";
-import { useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryPlaylists } from "@/contexts/LibraryContext";
 import { summariseTracks } from "@/services/librarySelectors";
 import type { LocalPlaylist } from "@/types/music";
 
 export default function PlaylistsScreen() {
-  const { getPlaylistTracks, playlists } = useLibraryState();
+  const { getPlaylistTracks, playlists } = useLibraryPlaylists();
   const data = useMemo(
     () => [{ id: "create", kind: "create" as const }, ...playlists],
     [playlists]

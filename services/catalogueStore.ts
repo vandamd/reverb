@@ -235,7 +235,6 @@ export const setTrackLiked = async (trackId: string, liked: boolean) => {
     liked ? 1 : 0,
     trackId
   );
-  return getTracks();
 };
 
 export const getPlaylists = async (): Promise<LocalPlaylist[]> => {

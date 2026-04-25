@@ -2,12 +2,12 @@ import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryActions, useLibraryStatus } from "@/contexts/LibraryContext";
 
 export default function SettingsScreen() {
   const { invertColors, setInvertColors } = useInvertColors();
   const { refreshLibrary } = useLibraryActions();
-  const { isScanning } = useLibraryState();
+  const { isScanning } = useLibraryStatus();
 
   return (
     <ContentContainer headerTitle="Settings" hideBackButton>

@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryAlbums } from "@/contexts/LibraryContext";
 import { usePlaybackControls } from "@/contexts/PlaybackContext";
 import { summariseTracks } from "@/services/librarySelectors";
 import type { LocalTrack } from "@/types/music";
@@ -15,7 +15,7 @@ import { n } from "@/utils/scaling";
 
 export default function AlbumDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { albums } = useLibraryState();
+  const { albums } = useLibraryAlbums();
   const { playQueue } = usePlaybackControls();
   const album = albums.find((item) => item.id === id);
   const albumTracks = album?.tracks ?? [];

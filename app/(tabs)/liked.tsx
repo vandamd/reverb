@@ -3,12 +3,13 @@ import { useCallback } from "react";
 import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryStatus, useLibraryTracks } from "@/contexts/LibraryContext";
 import { usePlaybackControls } from "@/contexts/PlaybackContext";
 import type { LocalTrack } from "@/types/music";
 
 export default function LikedSongsScreen() {
-  const { isLoading, isScanning, likedTracks } = useLibraryState();
+  const { likedTracks } = useLibraryTracks();
+  const { isLoading, isScanning } = useLibraryStatus();
   const { playQueue } = usePlaybackControls();
   const renderTrack = useCallback(
     ({ index, item: track }: { index: number; item: LocalTrack }) => (

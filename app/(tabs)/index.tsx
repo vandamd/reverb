@@ -4,7 +4,7 @@ import ContentContainer from "@/components/ContentContainer";
 import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { MediaListItem } from "@/components/MediaListItem";
-import { useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryAlbums } from "@/contexts/LibraryContext";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import type { LocalAlbum } from "@/types/music";
 
@@ -27,7 +27,7 @@ const compareAlbumsByTitle = (left: LocalAlbum, right: LocalAlbum) => {
 };
 
 export default function AlbumsScreen() {
-  const { albums, isLoading, isScanning } = useLibraryState();
+  const { albums, isLoading, isScanning } = useLibraryAlbums();
   const [sortOrder] = usePersistedState<AlbumsSortOrder>(
     "albums.sort",
     "artist"

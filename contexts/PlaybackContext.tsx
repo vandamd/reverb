@@ -75,6 +75,7 @@ const initialStatus = {
   isPlaying: false,
   progressMs: 0,
 };
+const playbackStatusUpdateIntervalMs = 5000;
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const playerRef = useRef<AudioPlayer | null>(null);
@@ -100,10 +101,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           : String(audioModeError)
       );
     });
+    TunesScanner.clearPlaybackCache(null).catch((cacheError) => {
+      setError(
+        cacheError instanceof Error ? cacheError.message : String(cacheError)
+      );
+    });
 
     const player = createAudioPlayer(null, {
-      keepAudioSessionActive: true,
-      updateInterval: 500,
+      updateInterval: playbackStatusUpdateIntervalMs,
     });
     playerRef.current = player;
     player.setActiveForLockScreen(true);

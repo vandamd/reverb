@@ -3,12 +3,15 @@ import { useState } from "react";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
 import { TextInput } from "@/components/TextInput";
-import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
+import {
+  useLibraryActions,
+  useLibraryPlaylists,
+} from "@/contexts/LibraryContext";
 
 export default function RenamePlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { renamePlaylist } = useLibraryActions();
-  const { playlists } = useLibraryState();
+  const { playlists } = useLibraryPlaylists();
   const playlist = playlists.find((item) => item.id === id);
   const [name, setName] = useState(playlist?.name ?? "");
 

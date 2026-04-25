@@ -9,7 +9,10 @@ import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
+import {
+  useLibraryActions,
+  useLibraryPlaylists,
+} from "@/contexts/LibraryContext";
 import { summariseTracks } from "@/services/librarySelectors";
 import type { LocalPlaylist } from "@/types/music";
 import { n } from "@/utils/scaling";
@@ -17,7 +20,7 @@ import { n } from "@/utils/scaling";
 export default function AddToPlaylistScreen() {
   const { trackId } = useLocalSearchParams<{ trackId: string }>();
   const { addTrackToPlaylist } = useLibraryActions();
-  const { getPlaylistTracks, playlists } = useLibraryState();
+  const { getPlaylistTracks, playlists } = useLibraryPlaylists();
   const { invertColors } = useInvertColors();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 

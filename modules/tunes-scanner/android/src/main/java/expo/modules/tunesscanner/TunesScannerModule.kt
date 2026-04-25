@@ -48,7 +48,13 @@ class TunesScannerModule : Module() {
       if (!hasReadPermission(context)) {
         throw SecurityException("Tunes needs audio permission to copy this track.")
       }
-      mapOf("uri" to copyToCache(context, contentUri, fileName))
+      val cachedUri = copyToCache(context, contentUri, fileName)
+      clearPlaybackCache(context, cachedUri)
+      mapOf("uri" to cachedUri)
+    }
+
+    AsyncFunction("clearPlaybackCache") Coroutine { activeUri: String? ->
+      clearPlaybackCache(requireContext(), activeUri)
     }
   }
 
@@ -254,6 +260,25 @@ class TunesScannerModule : Module() {
     } ?: throw IllegalStateException("Could not open $contentUri")
 
     return Uri.fromFile(destination).toString()
+  }
+
+  private fun clearPlaybackCache(context: Context, activeUri: String? = null) {
+    val playbackDir = File(context.cacheDir, "tunes-playback")
+    if (!playbackDir.exists()) {
+      return
+    }
+    val activeFile = activeUri
+      ?.let(Uri::parse)
+      ?.path
+      ?.let(::File)
+      ?.canonicalPath
+
+    playbackDir.listFiles()?.forEach { file ->
+      if (!file.isFile || file.canonicalPath == activeFile) {
+        return@forEach
+      }
+      file.delete()
+    }
   }
 
   private fun writeArtworkThumbnail(context: Context, cacheKey: String, bytes: ByteArray): String? {

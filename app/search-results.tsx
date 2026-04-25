@@ -1,17 +1,20 @@
 import { type Href, router, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { TrackListItem } from "@/components/TrackListItem";
-import { useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryTracks } from "@/contexts/LibraryContext";
 import { usePlaybackControls } from "@/contexts/PlaybackContext";
 import type { LocalTrack } from "@/types/music";
 
 export default function SearchResultsScreen() {
   const { query } = useLocalSearchParams<{ query: string }>();
-  const { searchTracks } = useLibraryState();
+  const { searchTracks } = useLibraryTracks();
   const { playQueue } = usePlaybackControls();
-  const results = searchTracks(query ?? "");
+  const results = useMemo(
+    () => searchTracks(query ?? ""),
+    [query, searchTracks]
+  );
   const renderTrack = useCallback(
     ({ index, item: track }: { index: number; item: LocalTrack }) => (
       <TrackListItem

@@ -84,6 +84,26 @@ const LibraryStateContext = createContext<
     >
   | undefined
 >(undefined);
+const LibraryAlbumsContext = createContext<
+  Pick<LibraryContextValue, "albums" | "isLoading" | "isScanning"> | undefined
+>(undefined);
+const LibraryPlaylistsContext = createContext<
+  Pick<LibraryContextValue, "getPlaylistTracks" | "playlists"> | undefined
+>(undefined);
+const LibraryTracksContext = createContext<
+  | Pick<
+      LibraryContextValue,
+      "likedTracks" | "searchTracks" | "trackById" | "tracks"
+    >
+  | undefined
+>(undefined);
+const LibraryStatusContext = createContext<
+  | Pick<
+      LibraryContextValue,
+      "error" | "isLoading" | "isScanning" | "permissionStatus"
+    >
+  | undefined
+>(undefined);
 const LibraryActionsContext = createContext<
   | Pick<
       LibraryContextValue,
@@ -176,7 +196,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [refreshLibrary]);
 
   const setTrackLiked = useCallback(async (trackId: string, liked: boolean) => {
-    setTracks(await setTrackLikedStore(trackId, liked));
+    await setTrackLikedStore(trackId, liked);
+    setTracks((currentTracks) =>
+      currentTracks.map((track) =>
+        track.id === trackId ? { ...track, liked } : track
+      )
+    );
   }, []);
 
   const createPlaylist = useCallback(
@@ -280,6 +305,40 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       tracks,
     ]
   );
+  const albumState = useMemo(
+    () => ({
+      albums,
+      isLoading,
+      isScanning,
+    }),
+    [albums, isLoading, isScanning]
+  );
+  const playlistState = useMemo(
+    () => ({
+      getPlaylistTracks: (playlist: LocalPlaylist | undefined) =>
+        getPlaylistTracks(playlist, tracks, trackById),
+      playlists,
+    }),
+    [playlists, trackById, tracks]
+  );
+  const trackState = useMemo(
+    () => ({
+      likedTracks,
+      searchTracks: (query: string) => searchTracks(searchIndex, query),
+      trackById,
+      tracks,
+    }),
+    [likedTracks, searchIndex, trackById, tracks]
+  );
+  const statusState = useMemo(
+    () => ({
+      error,
+      isLoading,
+      isScanning,
+      permissionStatus,
+    }),
+    [error, isLoading, isScanning, permissionStatus]
+  );
 
   const value = useMemo(
     () => ({
@@ -291,11 +350,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   return (
     <LibraryActionsContext.Provider value={actions}>
-      <LibraryStateContext.Provider value={state}>
-        <LibraryContext.Provider value={value}>
-          {children}
-        </LibraryContext.Provider>
-      </LibraryStateContext.Provider>
+      <LibraryStatusContext.Provider value={statusState}>
+        <LibraryTracksContext.Provider value={trackState}>
+          <LibraryPlaylistsContext.Provider value={playlistState}>
+            <LibraryAlbumsContext.Provider value={albumState}>
+              <LibraryStateContext.Provider value={state}>
+                <LibraryContext.Provider value={value}>
+                  {children}
+                </LibraryContext.Provider>
+              </LibraryStateContext.Provider>
+            </LibraryAlbumsContext.Provider>
+          </LibraryPlaylistsContext.Provider>
+        </LibraryTracksContext.Provider>
+      </LibraryStatusContext.Provider>
     </LibraryActionsContext.Provider>
   );
 }
@@ -320,6 +387,38 @@ export const useLibraryActions = () => {
   const context = useContext(LibraryActionsContext);
   if (!context) {
     throw new Error("useLibraryActions must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryAlbums = () => {
+  const context = useContext(LibraryAlbumsContext);
+  if (!context) {
+    throw new Error("useLibraryAlbums must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryPlaylists = () => {
+  const context = useContext(LibraryPlaylistsContext);
+  if (!context) {
+    throw new Error("useLibraryPlaylists must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryTracks = () => {
+  const context = useContext(LibraryTracksContext);
+  if (!context) {
+    throw new Error("useLibraryTracks must be used within LibraryProvider");
+  }
+  return context;
+};
+
+export const useLibraryStatus = () => {
+  const context = useContext(LibraryStatusContext);
+  if (!context) {
+    throw new Error("useLibraryStatus must be used within LibraryProvider");
   }
   return context;
 };

@@ -16,7 +16,7 @@ import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibraryActions, useLibraryState } from "@/contexts/LibraryContext";
+import { useLibraryActions, useLibraryTracks } from "@/contexts/LibraryContext";
 import {
   usePlaybackControls,
   usePlaybackProgress,
@@ -149,8 +149,8 @@ const ProgressIndicator = memo(function ProgressIndicator({
   }, []);
 
   useEffect(() => {
-    setDisplayProgressMs(progressMs);
-  }, [progressMs]);
+    setDisplayProgressMs(Math.min(progressMs, activeDurationMs));
+  }, [activeDurationMs, progressMs]);
 
   useEffect(() => {
     progressAnimation.stopAnimation();
@@ -364,7 +364,7 @@ const ExtraControls = memo(function ExtraControls({
 export default function PlayingScreen() {
   const { invertColors } = useInvertColors();
   const { setTrackLiked } = useLibraryActions();
-  const { trackById } = useLibraryState();
+  const { trackById } = useLibraryTracks();
   const { currentTrack } = usePlaybackTrack();
   const { isPlaying } = usePlaybackStatus();
   const { repeatMode, shuffle } = usePlaybackControls();

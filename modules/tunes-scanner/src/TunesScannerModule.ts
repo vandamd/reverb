@@ -7,6 +7,7 @@ import type {
 } from "./TunesScanner.types";
 
 declare class TunesScannerModule extends NativeModule {
+  clearPlaybackCache(activeUri?: string | null): Promise<void>;
   copyTrackToCache(contentUri: string, fileName: string): Promise<CachedTrack>;
   getAudioPermissionsAsync(): Promise<AudioPermissionResponse>;
   requestAudioPermissionsAsync(): Promise<AudioPermissionResponse>;
