@@ -1,10 +1,9 @@
-import { MaterialIcons } from "@expo/vector-icons";
+import type { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
-import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { n } from "@/utils/scaling";
 
 interface MediaListItemProps {
@@ -22,24 +21,14 @@ function MediaListItemComponent({
   subtitle,
   title,
 }: MediaListItemProps) {
-  const { invertColors } = useInvertColors();
-  const colour = invertColors ? "black" : "white";
-  const showFallback = !artworkUri;
-
   return (
     <HapticPressable onPress={onPress} style={styles.container}>
-      {artworkUri ? (
-        <TrackArtwork
-          size={50}
-          style={styles.imageContainer}
-          uri={artworkUri}
-        />
-      ) : null}
-      {showFallback ? (
-        <View style={styles.placeholderImageContainer}>
-          <MaterialIcons color={colour} name={fallbackIcon} size={n(24)} />
-        </View>
-      ) : null}
+      <TrackArtwork
+        fallbackIcon={fallbackIcon}
+        size={50}
+        style={styles.imageContainer}
+        uri={artworkUri}
+      />
       <View style={styles.textContainer}>
         <StyledText numberOfLines={1} style={styles.primaryText}>
           {title}
@@ -68,14 +57,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: n(0),
     paddingRight: n(10),
-  },
-  placeholderImageContainer: {
-    alignItems: "center",
-    backgroundColor: "#282828",
-    height: n(50),
-    justifyContent: "center",
-    marginRight: n(15),
-    width: n(50),
   },
   imageContainer: {
     marginRight: n(15),

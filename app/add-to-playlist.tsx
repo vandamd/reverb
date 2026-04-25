@@ -60,14 +60,7 @@ export default function AddToPlaylistScreen() {
             onPress={() => router.push("/playlist/new" as Href)}
             style={styles.listItem}
           >
-            <View
-              style={[
-                styles.iconBox,
-                { backgroundColor: invertColors ? "black" : "#282828" },
-              ]}
-            >
-              <MaterialIcons color="white" name="add" size={n(24)} />
-            </View>
+            <TrackArtwork fallbackIcon="add" size={50} style={styles.artwork} />
             <View style={styles.textContainer}>
               <StyledText style={styles.listName}>
                 Create new playlist
@@ -109,7 +102,7 @@ export default function AddToPlaylistScreen() {
         </HapticPressable>
       );
     },
-    [getPlaylistTracks, invertColors, selectedIds, textColor, togglePlaylist]
+    [getPlaylistTracks, selectedIds, textColor, togglePlaylist]
   );
 
   if (!trackId) {
@@ -169,13 +162,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     width: "100%",
-  },
-  iconBox: {
-    alignItems: "center",
-    height: n(50),
-    justifyContent: "center",
-    marginRight: n(15),
-    width: n(50),
   },
   listItem: {
     alignItems: "center",

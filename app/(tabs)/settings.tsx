@@ -1,3 +1,4 @@
+import { nativeApplicationVersion } from "expo-application";
 import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
@@ -10,7 +11,10 @@ export default function SettingsScreen() {
   const { isScanning } = useLibraryStatus();
 
   return (
-    <ContentContainer headerTitle="Settings" hideBackButton>
+    <ContentContainer
+      headerTitle={`Settings (v${nativeApplicationVersion})`}
+      hideBackButton
+    >
       <ToggleSwitch
         label="Invert Colours"
         onValueChange={setInvertColors}
