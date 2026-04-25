@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { Navbar, type TabConfigItem } from "@/components/Navbar";
+import { useCustomiseSettings } from "@/contexts/CustomiseSettingsContext";
 
 export const TABS_CONFIG: readonly TabConfigItem[] = [
   { name: "Albums", screenName: "index", iconName: "album" },
@@ -10,6 +11,17 @@ export const TABS_CONFIG: readonly TabConfigItem[] = [
 ] as const;
 
 export default function TabLayout() {
+  const { hideLikedSongs, hidePlaylists } = useCustomiseSettings();
+  const visibleTabsConfig = TABS_CONFIG.filter((tab) => {
+    if (tab.screenName === "liked") {
+      return !hideLikedSongs;
+    }
+    if (tab.screenName === "playlists") {
+      return !hidePlaylists;
+    }
+    return true;
+  });
+
   return (
     <Tabs
       tabBar={(props) => {
@@ -18,7 +30,7 @@ export default function TabLayout() {
           <Navbar
             currentScreenName={activeScreenName}
             navigation={props.navigation}
-            tabsConfig={TABS_CONFIG}
+            tabsConfig={visibleTabsConfig}
           />
         );
       }}

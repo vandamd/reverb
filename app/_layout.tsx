@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { CustomiseSettingsProvider } from "@/contexts/CustomiseSettingsContext";
 import {
   InvertColorsProvider,
   useInvertColors,
@@ -28,12 +29,14 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <InvertColorsProvider>
-        <LibraryProvider>
-          <PlaybackProvider>
-            <StatusBar hidden />
-            <RootLayout />
-          </PlaybackProvider>
-        </LibraryProvider>
+        <CustomiseSettingsProvider>
+          <LibraryProvider>
+            <PlaybackProvider>
+              <StatusBar hidden />
+              <RootLayout />
+            </PlaybackProvider>
+          </LibraryProvider>
+        </CustomiseSettingsProvider>
       </InvertColorsProvider>
     </GestureHandlerRootView>
   );

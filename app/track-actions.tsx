@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
 import { StyledButton } from "@/components/StyledButton";
+import { useCustomiseSettings } from "@/contexts/CustomiseSettingsContext";
 import {
   useLibraryActions,
   useLibraryPlaylists,
@@ -18,6 +19,7 @@ export default function TrackActionsScreen() {
   }>();
   const { movePlaylistTrack, removeTrackFromPlaylist, setTrackLiked } =
     useLibraryActions();
+  const { hideLikedSongs, hideLyrics, hidePlaylists } = useCustomiseSettings();
   const { getPlaylistTracks, playlists } = useLibraryPlaylists();
   const { trackById } = useLibraryTracks();
   const track = trackById.get(trackId);
@@ -59,13 +61,15 @@ export default function TrackActionsScreen() {
 
   return (
     <ContentContainer headerTitle={track.title}>
-      <StyledButton
-        onPress={async () => {
-          await setTrackLiked(track.id, !track.liked);
-        }}
-        text={track.liked ? "Unlike Track" : "Like Track"}
-      />
-      {playlist ? null : (
+      {hideLikedSongs ? null : (
+        <StyledButton
+          onPress={async () => {
+            await setTrackLiked(track.id, !track.liked);
+          }}
+          text={track.liked ? "Unlike Track" : "Like Track"}
+        />
+      )}
+      {playlist || hidePlaylists ? null : (
         <StyledButton
           onPress={() =>
             router.push({
@@ -76,7 +80,18 @@ export default function TrackActionsScreen() {
           text="Add to Playlist"
         />
       )}
-      {playlist && canMoveUp ? (
+      {hideLyrics ? null : (
+        <StyledButton
+          onPress={() =>
+            router.push({
+              pathname: "/lyrics",
+              params: { trackId: track.id },
+            })
+          }
+          text="Show Lyrics"
+        />
+      )}
+      {playlist && canMoveUp && !hidePlaylists ? (
         <StyledButton
           onPress={async () => {
             await movePlaylistTrack(playlist.id, track.id, "up");
@@ -85,7 +100,7 @@ export default function TrackActionsScreen() {
           text="Move Up"
         />
       ) : null}
-      {playlist && canMoveDown ? (
+      {playlist && canMoveDown && !hidePlaylists ? (
         <StyledButton
           onPress={async () => {
             await movePlaylistTrack(playlist.id, track.id, "down");
@@ -94,7 +109,7 @@ export default function TrackActionsScreen() {
           text="Move Down"
         />
       ) : null}
-      {playlist ? (
+      {playlist && !hidePlaylists ? (
         <StyledButton
           onPress={() => {
             router.push({

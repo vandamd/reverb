@@ -15,6 +15,7 @@ import ContentContainer from "@/components/ContentContainer";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
+import { useCustomiseSettings } from "@/contexts/CustomiseSettingsContext";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { useLibraryActions, useLibraryTracks } from "@/contexts/LibraryContext";
 import {
@@ -337,26 +338,88 @@ const TransportControls = memo(function TransportControls({
 const ExtraControls = memo(function ExtraControls({
   colour,
   onAddToPlaylist,
+  onLyrics,
   onToggleLiked,
   track,
 }: {
   colour: string;
   onAddToPlaylist: () => void;
+  onLyrics: () => void;
   onToggleLiked: () => void;
   track: LocalTrack;
 }) {
+  const { hideLikedSongs, hideLyrics, hidePlaylists } = useCustomiseSettings();
+  const visibleButtonCount = [
+    !hideLikedSongs,
+    !hideLyrics,
+    !hidePlaylists,
+  ].filter(Boolean).length;
+
   return (
-    <View style={styles.musicControlsExtra}>
-      <HapticPressable onPress={onToggleLiked}>
+    <View
+      style={[
+        styles.musicControlsExtra,
+        visibleButtonCount === 1 && styles.centeredMusicControlsExtra,
+        visibleButtonCount === 0 && styles.allHiddenMusicControlsExtra,
+      ]}
+    >
+      {!hideLikedSongs && (
+        <HapticPressable onPress={onToggleLiked}>
+          <MaterialIcons
+            color={colour}
+            name={track.liked ? "favorite" : "favorite-outline"}
+            size={n(30)}
+          />
+        </HapticPressable>
+      )}
+      {!hideLyrics && (
+        <HapticPressable onPress={onLyrics}>
+          <MaterialIcons color={colour} name="mic-external-on" size={n(30)} />
+        </HapticPressable>
+      )}
+      {!hidePlaylists && (
+        <HapticPressable onPress={onAddToPlaylist}>
+          <MaterialIcons color={colour} name="add" size={n(30)} />
+        </HapticPressable>
+      )}
+    </View>
+  );
+});
+
+const EmptyExtraControls = memo(function EmptyExtraControls() {
+  const { hideLikedSongs, hideLyrics, hidePlaylists } = useCustomiseSettings();
+  const visibleButtonCount = [
+    !hideLikedSongs,
+    !hideLyrics,
+    !hidePlaylists,
+  ].filter(Boolean).length;
+
+  return (
+    <View
+      style={[
+        styles.musicControlsExtra,
+        visibleButtonCount === 1 && styles.centeredMusicControlsExtra,
+        visibleButtonCount === 0 && styles.allHiddenMusicControlsExtra,
+        { opacity: 0 },
+      ]}
+    >
+      {!hideLikedSongs && (
         <MaterialIcons
-          color={colour}
-          name={track.liked ? "favorite" : "favorite-outline"}
+          color="transparent"
+          name="favorite-outline"
           size={n(30)}
         />
-      </HapticPressable>
-      <HapticPressable onPress={onAddToPlaylist}>
-        <MaterialIcons color={colour} name="add" size={n(30)} />
-      </HapticPressable>
+      )}
+      {!hideLyrics && (
+        <MaterialIcons
+          color="transparent"
+          name="mic-external-on"
+          size={n(30)}
+        />
+      )}
+      {!hidePlaylists && (
+        <MaterialIcons color="transparent" name="add" size={n(30)} />
+      )}
     </View>
   );
 });
@@ -397,6 +460,15 @@ export default function PlayingScreen() {
     }
     router.push(
       `/add-to-playlist?trackId=${encodeURIComponent(visibleTrack.id)}` as Href
+    );
+  }, [visibleTrack]);
+
+  const handleNavigateToLyrics = useCallback(() => {
+    if (!visibleTrack) {
+      return;
+    }
+    router.push(
+      `/lyrics?trackId=${encodeURIComponent(visibleTrack.id)}` as Href
     );
   }, [visibleTrack]);
 
@@ -451,14 +523,7 @@ export default function PlayingScreen() {
             </View>
             {renderEmptyControls()}
           </View>
-          <View style={[styles.musicControlsExtra, { opacity: 0 }]}>
-            <MaterialIcons
-              color="transparent"
-              name="favorite-outline"
-              size={n(30)}
-            />
-            <MaterialIcons color="transparent" name="add" size={n(30)} />
-          </View>
+          <EmptyExtraControls />
         </View>
       </ContentContainer>
     );
@@ -502,6 +567,7 @@ export default function PlayingScreen() {
         <ExtraControls
           colour={colour}
           onAddToPlaylist={handleNavigateToAddToPlaylist}
+          onLyrics={handleNavigateToLyrics}
           onToggleLiked={handleToggleLiked}
           track={visibleTrack}
         />
@@ -568,6 +634,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     width: "92%",
+  },
+  centeredMusicControlsExtra: {
+    justifyContent: "center",
+  },
+  allHiddenMusicControlsExtra: {
+    minHeight: n(31),
   },
   placeholderImage: {
     alignItems: "center",
