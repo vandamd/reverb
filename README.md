@@ -1,30 +1,34 @@
 <img src="assets/images/example.png" alt="Example Template Screenshots">
 
-<p>A minimal Expo template to create a LightOS-inspired app.</p>
+<p>A music player for the Light Phone III.</p>
 
-> [!NOTE]
-> This is very much a WIP. There's a lot of things I want to add but it'll take me a bit of time :)
+![GitHub License](https://img.shields.io/github/license/vandamd/tunes)
+![GitHub Release](https://img.shields.io/github/v/release/vandamd/tunes)
 
-## Quick Start
+## Installation
 
-1. Update `app.json` with your app name, slug, and package name
-2. Run `bun dev`
+The latest APK is available in [Releases](https://github.com/vandamd/tunes/releases/latest).
 
-## Commands
+I recommend using [Obtainium](https://github.com/ImranR98/Obtainium) and adding the repository URL to receive updates automatically.
 
-```bash
-bun dev  # Build and run
-bun run sync-version   # Sync version across files
-bun run generate-icon  # Generate icon from app name
-bun run generate-readme-image  # Generate README example image
-```
+## Getting Started
 
-## GitHub Releases
+Tunes requires you to upload your own music files. You need to create a new directory called `Tunes` in the `Music` directory.
 
-Trigger the workflow manually in Actions tab. It builds an APK and creates a GitHub release tagged with the version from `app.json`. Changelog is auto-generated from commits since the last release.
+In other words, put your music in `/storage/emulated/0/Music/Tunes`!
 
-Requires `EXPO_TOKEN` secret in repo settings.
+For those with `adb` and usb debugging enabled, I have created [Tunes Manager](https://github.com/vandamd/tunes-manager) to easily upload files.
 
-## Detailed Docs
+## Features
 
-See [AGENTS.md](./AGENTS.md) for complete component reference, patterns, and examples.
+- High resolution playback
+- Liked songs
+- Playlists
+- Lyrics (uses [lrclib.net](lrclib.net))
+- Seamless song transitions
+
+## Support
+
+Tunes is developed and maintained in my free time.
+
+If you find it useful, please [consider sponsoring](https://github.com/sponsors/vandamd). :)
