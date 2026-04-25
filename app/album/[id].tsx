@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   },
   heroCopy: {
     flex: 1,
-    gap: n(7),
+    gap: n(2),
     minWidth: n(0),
   },
   meta: {
