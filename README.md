@@ -24,7 +24,7 @@ For those with `adb` and usb debugging enabled, I have created [Tunes Manager](h
 - High resolution playback
 - Liked songs
 - Playlists
-- Lyrics (uses [lrclib.net](lrclib.net))
+- Lyrics (uses [lrclib.net](https://lrclib.net))
 - Seamless song transitions
 
 ## Support
