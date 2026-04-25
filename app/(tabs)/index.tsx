@@ -68,11 +68,7 @@ export default function AlbumsScreen() {
     >
       {sortedAlbums.length === 0 ? (
         <EmptyState
-          title={
-            isLoading || isScanning
-              ? "Scanning Music/Tunes..."
-              : "No albums yet"
-          }
+          title={isLoading || isScanning ? "Loading..." : "No albums yet"}
         />
       ) : (
         sortedAlbums.map((album) => (

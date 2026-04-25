@@ -33,7 +33,7 @@ import type { LocalAlbum, LocalPlaylist, LocalTrack } from "@/types/music";
 interface LibraryContextValue {
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   albums: LocalAlbum[];
-  createPlaylist: (name: string) => Promise<void>;
+  createPlaylist: (name: string, coverUri?: string | null) => Promise<void>;
   deletePlaylist: (playlistId: string) => Promise<void>;
   error: string | null;
   getPlaylistTracks: (playlist: LocalPlaylist | undefined) => LocalTrack[];
@@ -140,9 +140,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setTracks(await setTrackLikedStore(trackId, liked));
   }, []);
 
-  const createPlaylist = useCallback(async (name: string) => {
-    setPlaylists(await createPlaylistStore(name));
-  }, []);
+  const createPlaylist = useCallback(
+    async (name: string, coverUri?: string | null) => {
+      setPlaylists(await createPlaylistStore(name, coverUri ?? null));
+    },
+    []
+  );
 
   const renamePlaylist = useCallback(
     async (playlistId: string, name: string) => {

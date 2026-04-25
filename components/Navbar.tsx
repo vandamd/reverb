@@ -2,6 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { StyleSheet, View } from "react-native";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
+import { getInactiveNavbarIconColour } from "@/utils/colours";
 import { n } from "@/utils/scaling";
 import { HapticPressable } from "./HapticPressable";
 
@@ -21,7 +22,7 @@ const getTabColor = (isActive: boolean, inverted: boolean) => {
   if (isActive) {
     return inverted ? "black" : "white";
   }
-  return inverted ? "#C1C1C1" : "#6E6E6E";
+  return getInactiveNavbarIconColour(inverted);
 };
 
 export function Navbar({

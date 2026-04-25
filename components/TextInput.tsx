@@ -2,6 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { TextInput as RNTextInput, StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
+import { getInactiveNavbarIconColour } from "@/utils/colours";
 import { n } from "@/utils/scaling";
 
 interface TextInputProps {
@@ -23,6 +24,7 @@ export function TextInput({
 
   const textColor = invertColors ? "black" : "white";
   const borderColor = invertColors ? "black" : "white";
+  const placeholderTextColor = getInactiveNavbarIconColour(invertColors);
 
   const handleClear = () => {
     onChangeText("");
@@ -39,7 +41,7 @@ export function TextInput({
         onChangeText={onChangeText}
         onSubmitEditing={onSubmit}
         placeholder={placeholder}
-        placeholderTextColor={textColor}
+        placeholderTextColor={placeholderTextColor}
         returnKeyType="search"
         selectionColor={textColor}
         style={[styles.input, { color: textColor }]}

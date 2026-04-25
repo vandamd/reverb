@@ -30,11 +30,7 @@ export default function LikedSongsScreen() {
     >
       {likedTracks.length === 0 ? (
         <EmptyState
-          title={
-            isLoading || isScanning
-              ? "Scanning Music/Tunes..."
-              : "No liked songs yet"
-          }
+          title={isLoading || isScanning ? "Loading..." : "No liked songs yet"}
         />
       ) : (
         likedTracks.map((track, index) => (

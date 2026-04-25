@@ -252,14 +252,18 @@ export const getPlaylists = async (): Promise<LocalPlaylist[]> => {
 const createId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 
-export const createPlaylist = async (name: string) => {
+export const createPlaylist = async (
+  name: string,
+  coverUri: string | null = null
+) => {
   const database = await openDatabase();
   const now = Date.now();
   const id = createId();
   await database.runAsync(
-    "INSERT INTO playlists (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+    "INSERT INTO playlists (id, name, cover_uri, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     id,
     name.trim(),
+    coverUri,
     now,
     now
   );
