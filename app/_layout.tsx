@@ -5,7 +5,8 @@ import {
   InvertColorsProvider,
   useInvertColors,
 } from "@/contexts/InvertColorsContext";
-import { OptionExampleProvider } from "@/contexts/OptionExampleContext";
+import { LibraryProvider } from "@/contexts/LibraryContext";
+import { PlaybackProvider } from "@/contexts/PlaybackContext";
 
 function RootLayout() {
   const { invertColors } = useInvertColors();
@@ -27,10 +28,12 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <InvertColorsProvider>
-        <OptionExampleProvider>
-          <StatusBar hidden />
-          <RootLayout />
-        </OptionExampleProvider>
+        <LibraryProvider>
+          <PlaybackProvider>
+            <StatusBar hidden />
+            <RootLayout />
+          </PlaybackProvider>
+        </LibraryProvider>
       </InvertColorsProvider>
     </GestureHandlerRootView>
   );

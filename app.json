@@ -9,21 +9,32 @@
     "android": {
       "backgroundColor": "#000000",
       "package": "com.vandam.tunes",
-      "permissions": ["android.permission.WRITE_SECURE_SETTINGS"]
+      "permissions": [
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_SECURE_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-router",
       [
         "expo-font",
         {
-          "fonts": [
-            "./assets/fonts/PublicSans-Regular.ttf"
-          ]
+          "fonts": ["./assets/fonts/PublicSans-Regular.ttf"]
         }
       ],
       "./plugins/withAndroidConfigChanges",
       "./plugins/withAndroidTheme",
-      "./plugins/withDaltonizerToggle"
+      "./plugins/withDaltonizerToggle",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

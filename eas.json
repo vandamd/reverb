@@ -1,12 +1,12 @@
 {
-    "cli": {
-        "appVersionSource": "local"
-    },
-    "build": {
-        "production": {
-            "android": {
-                "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
-            }
-        }
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "production": {
+      "android": {
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
+      }
     }
+  }
 }

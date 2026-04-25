@@ -19,7 +19,10 @@ export default function ConfirmScreen() {
 
   const handleConfirm = () => {
     const path = params.returnPath || "/(tabs)/settings";
-    router.navigate(`${path}?confirmed=true&action=${encodeURIComponent(params.action ?? '')}` as Href);
+    const separator = path.includes("?") ? "&" : "?";
+    router.navigate(
+      `${path}${separator}confirmed=true&action=${encodeURIComponent(params.action ?? "")}` as Href
+    );
   };
 
   const handleBack = () => {

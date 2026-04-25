@@ -1,19 +1,42 @@
-import { useLocalSearchParams } from "expo-router";
+import { type Href, router, useLocalSearchParams } from "expo-router";
 import ContentContainer from "@/components/ContentContainer";
-import { StyledButton } from "@/components/StyledButton";
+import { EmptyState } from "@/components/EmptyState";
+import { TrackListItem } from "@/components/TrackListItem";
+import { useLibrary } from "@/contexts/LibraryContext";
+import { usePlayback } from "@/contexts/PlaybackContext";
 
 export default function SearchResultsScreen() {
   const { query } = useLocalSearchParams<{ query: string }>();
-
-  if (!query) {
-    return <ContentContainer headerTitle=" " />;
-  }
+  const { searchTracks } = useLibrary();
+  const { playQueue } = usePlayback();
+  const results = searchTracks(query ?? "");
 
   return (
-    <ContentContainer headerTitle={`Results for "${query}"`}>
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
-        <StyledButton key={num} text={`${query} - Result ${num}`} />
-      ))}
+    <ContentContainer
+      contentGap={8}
+      contentWidth="wide"
+      headerTitle={query ? `Search: ${query}` : "Search"}
+      scrollable={results.length > 0}
+      style={
+        results.length === 0
+          ? { alignItems: "center", justifyContent: "center" }
+          : undefined
+      }
+    >
+      {results.length === 0 ? (
+        <EmptyState title="No results" />
+      ) : (
+        results.map((track, index) => (
+          <TrackListItem
+            key={track.id}
+            onPress={async () => {
+              await playQueue(results, index);
+              router.push("/playing" as Href);
+            }}
+            track={track}
+          />
+        ))
+      )}
     </ContentContainer>
   );
 }

@@ -29,7 +29,7 @@ export default function SearchScreen() {
         autoFocus
         onChangeText={setQuery}
         onSubmit={handleSearch}
-        placeholder="Search..."
+        placeholder="Search library"
         value={query}
       />
     </ContentContainer>
