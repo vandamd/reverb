@@ -20,10 +20,6 @@ export interface ScannedTrack {
   year: number | null;
 }
 
-export interface CachedTrack {
-  uri: string;
-}
-
 export interface ExistingTrackForScan {
   album: string;
   albumArtist: string;

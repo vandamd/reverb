@@ -39,14 +39,6 @@
       "./plugins/withAndroidConfigChanges",
       "./plugins/withAndroidTheme",
       "./plugins/withDaltonizerToggle",
-      [
-        "expo-audio",
-        {
-          "enableBackgroundPlayback": true,
-          "microphonePermission": false,
-          "recordAudioAndroid": false
-        }
-      ],
       "expo-sqlite",
       "expo-image"
     ],

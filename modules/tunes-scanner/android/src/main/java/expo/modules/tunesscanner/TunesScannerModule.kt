@@ -43,19 +43,6 @@ class TunesScannerModule : Module() {
       scanTunes(context, existingTracks.orEmpty().associateBy { it["id"]?.toString().orEmpty() })
     }
 
-    AsyncFunction("copyTrackToCache") Coroutine { contentUri: String, fileName: String ->
-      val context = requireContext()
-      if (!hasReadPermission(context)) {
-        throw SecurityException("Tunes needs audio permission to copy this track.")
-      }
-      val cachedUri = copyToCache(context, contentUri, fileName)
-      clearPlaybackCache(context, cachedUri)
-      mapOf("uri" to cachedUri)
-    }
-
-    AsyncFunction("clearPlaybackCache") Coroutine { activeUri: String? ->
-      clearPlaybackCache(requireContext(), activeUri)
-    }
   }
 
   private fun requireContext(): Context =
@@ -242,42 +229,6 @@ class TunesScannerModule : Module() {
       TrackMetadata()
     } finally {
       retriever.release()
-    }
-  }
-
-  private fun copyToCache(context: Context, contentUri: String, fileName: String): String {
-    val sourceUri = Uri.parse(contentUri)
-    val playbackDir = File(context.cacheDir, "tunes-playback")
-    playbackDir.mkdirs()
-    val sourceId = sourceUri.lastPathSegment ?: "track"
-    val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    val destination = File(playbackDir, "$sourceId-$safeName")
-
-    context.contentResolver.openInputStream(sourceUri)?.use { input ->
-      destination.outputStream().use { output ->
-        input.copyTo(output)
-      }
-    } ?: throw IllegalStateException("Could not open $contentUri")
-
-    return Uri.fromFile(destination).toString()
-  }
-
-  private fun clearPlaybackCache(context: Context, activeUri: String? = null) {
-    val playbackDir = File(context.cacheDir, "tunes-playback")
-    if (!playbackDir.exists()) {
-      return
-    }
-    val activeFile = activeUri
-      ?.let(Uri::parse)
-      ?.path
-      ?.let(::File)
-      ?.canonicalPath
-
-    playbackDir.listFiles()?.forEach { file ->
-      if (!file.isFile || file.canonicalPath == activeFile) {
-        return@forEach
-      }
-      file.delete()
     }
   }
 
