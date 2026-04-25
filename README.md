@@ -2,8 +2,8 @@
 
 <p>A music player for the Light Phone III.</p>
 
-![GitHub License](https://img.shields.io/github/license/vandamd/reverb)
-![GitHub Release](https://img.shields.io/github/v/release/vandamd/reverb)
+![GitHub License](https://img.shields.io/github/license/vandamd/reverb?)
+![GitHub Release](https://img.shields.io/github/v/release/vandamd/reverb?)
 
 ## Installation
 
