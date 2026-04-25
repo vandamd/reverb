@@ -1,4 +1,3 @@
-import { type Href, router } from "expo-router";
 import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
@@ -11,16 +10,7 @@ export default function SettingsScreen() {
   const { isScanning } = useLibraryState();
 
   return (
-    <ContentContainer
-      headerTitle="Settings"
-      hideBackButton
-      rightAction={{
-        icon: "multitrack-audio",
-        onPress: () => {
-          router.push("/playing" as Href);
-        },
-      }}
-    >
+    <ContentContainer headerTitle="Settings" hideBackButton>
       <ToggleSwitch
         label="Invert Colours"
         onValueChange={setInvertColors}
