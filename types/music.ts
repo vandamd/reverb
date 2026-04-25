@@ -1,4 +1,4 @@
-export type { ScannedTrack } from "@/modules/tunes-scanner/src/TunesScanner.types";
+export type { ScannedTrack } from "@/modules/reverb-scanner/src/ReverbScanner.types";
 
 export interface LocalTrack {
   album: string;

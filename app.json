@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Tunes",
-    "slug": "tunes",
+    "name": "Reverb",
+    "slug": "reverb",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "tunes",
+    "scheme": "reverb",
     "icon": "./assets/images/icon.png",
     "android": {
       "backgroundColor": "#000000",
-      "package": "com.vandam.tunes",
+      "package": "com.vandam.reverb",
       "permissions": [
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_MEDIA_IMAGES",
@@ -26,14 +26,18 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/PublicSans-Regular.ttf"]
+          "fonts": [
+            "./assets/fonts/PublicSans-Regular.ttf"
+          ]
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Tunes to access your photos for playlist covers.",
-          "granularPermissions": ["photo"]
+          "photosPermission": "Allow Reverb to access your photos for playlist covers.",
+          "granularPermissions": [
+            "photo"
+          ]
         }
       ],
       "./plugins/withAndroidConfigChanges",
@@ -48,7 +52,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b225c8a3-083f-42a8-a916-12e958675c74"
+        "projectId": "eb97c696-b6a2-4e29-9816-3f905027677d"
       }
     }
   }

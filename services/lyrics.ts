@@ -10,7 +10,9 @@ interface LrcLibResponse {
   plainLyrics: string | null;
 }
 
-const LRC_HEADERS = { "User-Agent": "Tunes (https://github.com/vandamd/tunes)" };
+const LRC_HEADERS = {
+  "User-Agent": "Reverb (https://github.com/vandamd/reverb)",
+};
 
 export const getLyricsTrackKey = (track: LyricsTrackInfo | null) => {
   if (!track) {

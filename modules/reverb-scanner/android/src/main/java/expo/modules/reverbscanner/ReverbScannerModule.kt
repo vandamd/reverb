@@ -1,4 +1,4 @@
-package expo.modules.tunesscanner
+package expo.modules.reverbscanner
 
 import android.Manifest
 import android.content.ContentUris
@@ -20,12 +20,12 @@ import java.io.File
 import java.security.MessageDigest
 import kotlin.math.max
 
-class TunesScannerModule : Module() {
-  private val tunesRoot = "Music/Tunes/"
+class ReverbScannerModule : Module() {
+  private val reverbRoot = "Music/Reverb/"
   private val artworkMaxSize = 512
 
   override fun definition() = ModuleDefinition {
-    Name("TunesScanner")
+    Name("ReverbScanner")
 
     AsyncFunction("getAudioPermissionsAsync") { promise: Promise ->
       Permissions.getPermissionsWithPermissionsManager(appContext.permissions, promise, readPermission())
@@ -38,9 +38,9 @@ class TunesScannerModule : Module() {
     AsyncFunction("scanLibrary") Coroutine { existingTracks: List<Map<String, Any?>>? ->
       val context = requireContext()
       if (!hasReadPermission(context)) {
-        throw SecurityException("Tunes needs audio permission to scan Music/Tunes.")
+        throw SecurityException("Reverb needs audio permission to scan Music/Reverb.")
       }
-      scanTunes(context, existingTracks.orEmpty().associateBy { it["id"]?.toString().orEmpty() })
+      scanReverb(context, existingTracks.orEmpty().associateBy { it["id"]?.toString().orEmpty() })
     }
 
   }
@@ -58,7 +58,7 @@ class TunesScannerModule : Module() {
   private fun hasReadPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, readPermission()) == PackageManager.PERMISSION_GRANTED
 
-  private fun scanTunes(
+  private fun scanReverb(
     context: Context,
     existingTracks: Map<String, Map<String, Any?>>
   ): List<Map<String, Any?>> {
@@ -100,9 +100,9 @@ class TunesScannerModule : Module() {
       "${MediaStore.MediaColumns.DATA} LIKE ? AND ${MediaStore.Audio.AudioColumns.IS_MUSIC} != 0"
     }
     val selectionArgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      arrayOf("$tunesRoot%")
+      arrayOf("$reverbRoot%")
     } else {
-      arrayOf("%/Music/Tunes/%")
+      arrayOf("%/Music/Reverb/%")
     }
     val sortOrder = "${MediaStore.Audio.AudioColumns.ALBUM} COLLATE NOCASE ASC, ${MediaStore.Audio.AudioColumns.TRACK} ASC"
     val tracks = mutableListOf<Map<String, Any?>>()
@@ -130,9 +130,9 @@ class TunesScannerModule : Module() {
         val contentUri = ContentUris.withAppendedId(collection, mediaId)
         val fileName = cursor.getNullableString(fileNameColumn) ?: "Track $mediaId"
         val relativePath = if (relativePathColumn >= 0) {
-          cursor.getNullableString(relativePathColumn) ?: tunesRoot
+          cursor.getNullableString(relativePathColumn) ?: reverbRoot
         } else {
-          tunesRoot
+          reverbRoot
         }
         val sizeBytes = cursor.getNullableLong(sizeColumn) ?: 0L
         val modifiedAtMs = (cursor.getNullableLong(modifiedColumn) ?: 0L) * 1000L
@@ -233,7 +233,7 @@ class TunesScannerModule : Module() {
   }
 
   private fun writeArtworkThumbnail(context: Context, cacheKey: String, bytes: ByteArray): String? {
-    val artworkDir = File(context.filesDir, "tunes-artwork")
+    val artworkDir = File(context.filesDir, "reverb-artwork")
     artworkDir.mkdirs()
     val artworkFile = File(artworkDir, "$cacheKey.jpg")
     if (artworkFile.exists() && artworkFile.length() > 0) {

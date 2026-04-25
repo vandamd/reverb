@@ -3,12 +3,12 @@ import type {
   AudioPermissionResponse,
   ExistingTrackForScan,
   ScannedTrack,
-} from "./TunesScanner.types";
+} from "./ReverbScanner.types";
 
-declare class TunesScannerModule extends NativeModule {
+declare class ReverbScannerModule extends NativeModule {
   getAudioPermissionsAsync(): Promise<AudioPermissionResponse>;
   requestAudioPermissionsAsync(): Promise<AudioPermissionResponse>;
   scanLibrary(existingTracks?: ExistingTrackForScan[]): Promise<ScannedTrack[]>;
 }
 
-export default requireNativeModule<TunesScannerModule>("TunesScanner");
+export default requireNativeModule<ReverbScannerModule>("ReverbScanner");

@@ -1,4 +1,4 @@
-package com.vandam.tunes
+package com.vandam.reverb
 import android.util.Log
 import android.provider.Settings
 import expo.modules.splashscreen.SplashScreenManager

@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import TunesScanner from "@/modules/tunes-scanner/src/TunesScannerModule";
+import ReverbScanner from "@/modules/reverb-scanner/src/ReverbScannerModule";
 import {
   getPlaylists,
   getTracks,
@@ -25,7 +25,7 @@ export const loadCatalogueEffect = Effect.tryPromise({
 export const refreshCatalogueEffect = Effect.tryPromise({
   try: async () => {
     await initialiseCatalogueStore();
-    const permission = await TunesScanner.requestAudioPermissionsAsync();
+    const permission = await ReverbScanner.requestAudioPermissionsAsync();
     if (!permission.granted) {
       const [tracks, playlists] = await Promise.all([
         getTracks(),
@@ -40,7 +40,7 @@ export const refreshCatalogueEffect = Effect.tryPromise({
     }
 
     const existingTracks = await getTracks();
-    const scannedTracks = await TunesScanner.scanLibrary(existingTracks);
+    const scannedTracks = await ReverbScanner.scanLibrary(existingTracks);
     const [tracks, playlists] = await Promise.all([
       replaceScannedTracks(scannedTracks),
       getPlaylists(),

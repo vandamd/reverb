@@ -34,7 +34,7 @@ interface PlaylistRow {
 let databasePromise: Promise<SQLiteDatabase> | null = null;
 
 const openDatabase = async () => {
-  databasePromise ??= openDatabaseAsync("tunes.db");
+  databasePromise ??= openDatabaseAsync("reverb.db");
   const database = await databasePromise;
   await database.execAsync(`
     PRAGMA journal_mode = WAL;

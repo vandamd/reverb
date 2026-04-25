@@ -1,4 +1,4 @@
-package com.vandam.tunes
+package com.vandam.reverb
 import com.facebook.react.common.assets.ReactFontManager
 
 import android.app.Application
