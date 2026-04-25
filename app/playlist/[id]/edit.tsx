@@ -13,16 +13,22 @@ export default function EditPlaylistScreen() {
   }>();
   const { deletePlaylist, playlists } = useLibrary();
   const playlist = playlists.find((item) => item.id === id);
+  const isDeletingPlaylist =
+    confirmed === "true" && action === "deletePlaylist";
 
   useEffect(() => {
-    if (confirmed !== "true" || action !== "deletePlaylist" || !id) {
+    if (!(isDeletingPlaylist && id)) {
       return;
     }
 
     deletePlaylist(id).then(() => {
       router.dismissTo("/(tabs)/playlists" as Href);
     });
-  }, [action, confirmed, deletePlaylist, id]);
+  }, [deletePlaylist, id, isDeletingPlaylist]);
+
+  if (isDeletingPlaylist) {
+    return null;
+  }
 
   if (!playlist) {
     return (
