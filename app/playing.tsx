@@ -3,6 +3,7 @@ import { type Href, router } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type StyleProp,
@@ -134,11 +135,75 @@ const ProgressIndicator = memo(function ProgressIndicator({
   fallbackDurationMs: number;
 }) {
   const { durationMs, progressMs } = usePlaybackProgress();
+  const { isPlaying } = usePlaybackStatus();
   const { seekToPosition } = usePlaybackControls();
+  const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
+  const progressAnimation = useRef(new Animated.Value(0)).current;
+  const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressBarWidthRef = useRef<number | null>(null);
   const activeDurationMs = durationMs || fallbackDurationMs;
   const progressRatio =
     activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
+  const handleProgressBarLayout = useCallback((event: LayoutChangeEvent) => {
+    progressBarWidthRef.current = event.nativeEvent.layout.width;
+  }, []);
+
+  useEffect(() => {
+    setDisplayProgressMs(progressMs);
+  }, [progressMs]);
+
+  useEffect(() => {
+    progressAnimation.stopAnimation();
+
+    if (!isPlaying || activeDurationMs <= 0) {
+      progressAnimation.setValue(progressRatio);
+      return;
+    }
+
+    progressAnimation.setValue(progressRatio);
+    Animated.timing(progressAnimation, {
+      duration: Math.max(activeDurationMs - progressMs, 0),
+      easing: Easing.linear,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+
+    return () => {
+      progressAnimation.stopAnimation();
+    };
+  }, [
+    activeDurationMs,
+    isPlaying,
+    progressAnimation,
+    progressMs,
+    progressRatio,
+  ]);
+
+  useEffect(() => {
+    if (progressTickRef.current !== null) {
+      clearInterval(progressTickRef.current);
+      progressTickRef.current = null;
+    }
+
+    if (!isPlaying || activeDurationMs <= 0) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    const startedProgressMs = progressMs;
+    progressTickRef.current = setInterval(() => {
+      setDisplayProgressMs(
+        Math.min(startedProgressMs + Date.now() - startedAt, activeDurationMs)
+      );
+    }, 1000);
+
+    return () => {
+      if (progressTickRef.current !== null) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+    };
+  }, [activeDurationMs, isPlaying, progressMs]);
 
   const handleProgressBarSeek = async (event: GestureResponderEvent) => {
     if (!(activeDurationMs > 0 && progressBarWidthRef.current)) {
@@ -154,21 +219,21 @@ const ProgressIndicator = memo(function ProgressIndicator({
   return (
     <View style={styles.timeIndicatorContainer}>
       <HapticPressable
+        hitSlop={{ bottom: n(18), top: n(18) }}
         onPress={handleProgressBarSeek}
         style={styles.progressBarPressable}
       >
         <View
-          onLayout={(event) => {
-            progressBarWidthRef.current = event.nativeEvent.layout.width;
-          }}
+          onLayout={handleProgressBarLayout}
           style={[styles.progressBarBackground, { backgroundColor: colour }]}
         >
-          <View
+          <Animated.View
             style={[
               styles.progressBarForeground,
               {
                 backgroundColor: colour,
-                width: `${progressRatio * 100}%`,
+                transform: [{ scaleX: progressAnimation }],
+                transformOrigin: "left center",
               },
             ]}
           />
@@ -176,7 +241,7 @@ const ProgressIndicator = memo(function ProgressIndicator({
       </HapticPressable>
       <View style={styles.progressBarInfo}>
         <StyledText style={styles.timeText}>
-          {formatDuration(progressMs)}
+          {formatDuration(displayProgressMs)}
         </StyledText>
         <StyledText style={styles.timeText}>
           {formatDuration(activeDurationMs)}
@@ -521,6 +586,7 @@ const styles = StyleSheet.create({
     height: n(6),
     position: "absolute",
     top: n(-2),
+    width: "100%",
   },
   progressBarInfo: {
     alignItems: "center",
