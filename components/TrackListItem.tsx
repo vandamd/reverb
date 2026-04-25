@@ -106,7 +106,8 @@ const styles = StyleSheet.create({
     paddingRight: n(10),
   },
   trackNumber: {
-    fontSize: n(26),
+    fontSize: n(22),
+    lineHeight: n(24),
     paddingRight: n(8),
     textAlign: "center",
     width: n(56),
