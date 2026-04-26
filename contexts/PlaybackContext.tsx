@@ -277,8 +277,14 @@ const getExistingQueueIndex = (
     : -1;
 };
 
-const looksLikeStopReset = (candidateIndex: number, trustedIndex: number) =>
-  candidateIndex === 0 && trustedIndex > 0;
+const looksLikeStopReset = (
+  candidateIndex: number,
+  trustedIndex: number,
+  playbackState?: State
+) =>
+  candidateIndex === 0 &&
+  trustedIndex > 0 &&
+  (playbackState === undefined || !trackPlayerPlayingStates.has(playbackState));
 
 const getStartPositionMs = (snapshot: {
   durationMs: number;
@@ -290,7 +296,8 @@ const getSyncIndex = (
   resolvedQueue: LocalTrack[],
   nativeActiveIndex: number | undefined,
   existingQueueIndex: number,
-  targetIndex: number
+  targetIndex: number,
+  playbackState?: State
 ): number | null => {
   if (nativeQueue.length > 0 && resolvedQueue.length === nativeQueue.length) {
     const nativeIndexValid =
@@ -300,13 +307,13 @@ const getSyncIndex = (
     if (!nativeIndexValid) {
       return null;
     }
-    return looksLikeStopReset(nativeActiveIndex, targetIndex)
+    return looksLikeStopReset(nativeActiveIndex, targetIndex, playbackState)
       ? targetIndex
       : nativeActiveIndex;
   }
 
   if (existingQueueIndex >= 0) {
-    return looksLikeStopReset(existingQueueIndex, targetIndex)
+    return looksLikeStopReset(existingQueueIndex, targetIndex, playbackState)
       ? null
       : existingQueueIndex;
   }
@@ -475,7 +482,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         resolvedQueue,
         nativeActiveIndex,
         existingQueueIndex,
-        playbackTargetRef.current.index
+        playbackTargetRef.current.index,
+        nativePlaybackState.state
       );
 
       if (syncIndex !== null) {
@@ -609,7 +617,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         if (
           typeof event.index === "number" &&
           event.index >= 0 &&
-          !looksLikeStopReset(event.index, index)
+          !looksLikeStopReset(event.index, index, effectivePlaybackState)
         ) {
           setIndex(event.index);
           playbackTargetRef.current = {
