@@ -1,13 +1,7 @@
 import { type Href, router } from "expo-router";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  memo,
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
-import {
+  Animated,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type StyleProp,
@@ -41,42 +35,34 @@ const startMarqueeAnimation = ({
   delay,
   distance,
   duration,
-  updateTranslateX,
+  animatedValue,
 }: {
   delay: number;
   distance: number;
   duration: number;
-  updateTranslateX: (nextValue: number) => void;
+  animatedValue: Animated.Value;
 }) => {
-  let frame: ReturnType<typeof setTimeout> | null = null;
-  let startedAt = 0;
+  animatedValue.setValue(0);
 
-  updateTranslateX(0);
+  const animation = Animated.loop(
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(animatedValue, {
+        toValue: -distance,
+        duration,
+        useNativeDriver: true,
+      }),
+      Animated.delay(500),
+      Animated.timing(animatedValue, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ])
+  );
 
-  const startCycle = () => {
-    startedAt = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - startedAt;
-      if (elapsed >= duration) {
-        updateTranslateX(-distance);
-        frame = setTimeout(() => {
-          updateTranslateX(0);
-          frame = setTimeout(startCycle, delay);
-        }, 500);
-        return;
-      }
-      updateTranslateX(-distance * (elapsed / duration));
-      frame = setTimeout(tick, 16);
-    };
-    tick();
-  };
-
-  frame = setTimeout(startCycle, delay);
-  return () => {
-    if (frame !== null) {
-      clearTimeout(frame);
-    }
-  };
+  animation.start();
+  return () => animation.stop();
 };
 
 function MarqueeText({
@@ -94,13 +80,7 @@ function MarqueeText({
 }) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
-  const [translateX, dispatchTranslateX] = useReducer(
-    (_currentValue: number, nextValue: number) => nextValue,
-    0
-  );
-  const updateTranslateX = useCallback((nextValue: number) => {
-    dispatchTranslateX(nextValue);
-  }, []);
+  const animatedValue = useRef(new Animated.Value(0)).current;
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     setContainerWidth(event.nativeEvent.layout.width);
@@ -115,7 +95,7 @@ function MarqueeText({
 
   useEffect(() => {
     if (!shouldScroll) {
-      updateTranslateX(0);
+      animatedValue.setValue(0);
       return;
     }
 
@@ -124,7 +104,7 @@ function MarqueeText({
       delay,
       distance,
       duration: children.length * msPerChar,
-      updateTranslateX,
+      animatedValue,
     });
   }, [
     children,
@@ -133,7 +113,7 @@ function MarqueeText({
     msPerChar,
     shouldScroll,
     textWidth,
-    updateTranslateX,
+    animatedValue,
   ]);
 
   return (
@@ -145,14 +125,14 @@ function MarqueeText({
       </View>
 
       {shouldScroll ? (
-        <View
+        <Animated.View
           style={[
             styles.marqueeScrollContainer,
-            { transform: [{ translateX }] },
+            { transform: [{ translateX: animatedValue }] },
           ]}
         >
           <StyledText style={style}>{children}</StyledText>
-        </View>
+        </Animated.View>
       ) : (
         <StyledText numberOfLines={1} style={style}>
           {children}
