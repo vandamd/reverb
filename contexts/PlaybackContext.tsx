@@ -334,6 +334,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffleState] = useState(false);
   const [repeatMode, setRepeatModeState] = useState<RepeatMode>("off");
   const [error, setError] = useState<string | null>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
   const playbackSnapshotRef = useRef({ durationMs: 0, progressMs: 0 });
   const playbackTargetRef = useRef<{
     index: number;
@@ -344,10 +345,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const effectivePlaybackState = syncedPlaybackState ?? playbackState.state;
   const effectivePlayWhenReady = syncedPlayWhenReady ?? playWhenReady;
   const isPlaying =
-    effectivePlayWhenReady === true &&
-    effectivePlaybackState !== undefined &&
-    trackPlayerPlayingStates.has(effectivePlaybackState) &&
-    currentTrack !== null;
+    currentTrack !== null &&
+    (isSeeking ||
+      (effectivePlayWhenReady === true &&
+        effectivePlaybackState !== undefined &&
+        trackPlayerPlayingStates.has(effectivePlaybackState)));
   const durationMs =
     Math.round((syncedProgress?.duration ?? progress.duration) * 1000) ||
     currentTrack?.durationMs ||
@@ -765,11 +767,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   const seekToPosition = useCallback(async (progressMs: number) => {
     try {
+      setIsSeeking(true);
       setError(null);
       await ensureTrackPlayerReady();
       await TrackPlayer.seekTo(Math.max(0, progressMs) / 1000);
     } catch (seekError) {
       setError(getErrorMessage(seekError));
+    } finally {
+      setTimeout(() => {
+        setIsSeeking(false);
+      }, 200);
     }
   }, []);
 
