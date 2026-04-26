@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import { StyleSheet, View } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
 import { EmptyState } from "@/components/EmptyState";
@@ -24,6 +24,20 @@ const toLyricsTrackInfo = (track: LocalTrack): LyricsTrackInfo => ({
   name: track.title,
 });
 
+interface LyricsState {
+  hasError: boolean;
+  isLoading: boolean;
+  isResolved: boolean;
+  lines: string[] | null;
+}
+
+const emptyLyricsState: LyricsState = {
+  hasError: false,
+  isLoading: false,
+  isResolved: false,
+  lines: null,
+};
+
 export default function LyricsScreen() {
   const { trackId } = useLocalSearchParams<{ trackId?: string }>();
   const { trackById } = useLibraryTracks();
@@ -38,42 +52,44 @@ export default function LyricsScreen() {
     [track]
   );
   const trackKey = getLyricsTrackKey(lyricsTrack);
-  const [lyricsLines, setLyricsLines] = useState<string[] | null>(null);
-  const [hasError, setHasError] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isResolved, setIsResolved] = useState(false);
+  const [lyricsState, dispatchLyricsState] = useReducer(
+    (_state: LyricsState, nextState: LyricsState) => nextState,
+    emptyLyricsState
+  );
 
   useEffect(() => {
     if (!(lyricsTrack && trackKey)) {
-      setLyricsLines(null);
-      setHasError(false);
-      setIsLoading(false);
-      setIsResolved(false);
+      dispatchLyricsState(emptyLyricsState);
       return;
     }
 
     const controller = new AbortController();
-    setLyricsLines(null);
-    setHasError(false);
-    setIsLoading(true);
-    setIsResolved(false);
+    dispatchLyricsState({
+      hasError: false,
+      isLoading: true,
+      isResolved: false,
+      lines: null,
+    });
 
     fetchPlainLyrics(lyricsTrack, controller.signal)
       .then((nextLyricsLines) => {
         if (!controller.signal.aborted) {
-          setLyricsLines(nextLyricsLines);
+          dispatchLyricsState({
+            hasError: false,
+            isLoading: false,
+            isResolved: true,
+            lines: nextLyricsLines,
+          });
         }
       })
       .catch((error) => {
         if (!(controller.signal.aborted || isAbortError(error))) {
-          setLyricsLines(null);
-          setHasError(true);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-          setIsResolved(true);
+          dispatchLyricsState({
+            hasError: true,
+            isLoading: false,
+            isResolved: true,
+            lines: null,
+          });
         }
       });
 
@@ -94,9 +110,9 @@ export default function LyricsScreen() {
     );
   }
 
-  const hasLyrics = lyricsLines && lyricsLines.length > 0;
+  const hasLyrics = lyricsState.lines && lyricsState.lines.length > 0;
 
-  if (isLoading) {
+  if (lyricsState.isLoading) {
     return (
       <ContentContainer
         headerTitle=" "
@@ -108,7 +124,7 @@ export default function LyricsScreen() {
     );
   }
 
-  if (hasError) {
+  if (lyricsState.hasError) {
     return (
       <ContentContainer
         headerTitle=" "
@@ -120,7 +136,7 @@ export default function LyricsScreen() {
     );
   }
 
-  if (isResolved && !hasLyrics) {
+  if (lyricsState.isResolved && !hasLyrics) {
     return (
       <ContentContainer
         headerTitle=" "
@@ -135,7 +151,7 @@ export default function LyricsScreen() {
   return (
     <ContentContainer contentGap={14} headerTitle=" ">
       <View style={styles.lyrics}>
-        {lyricsLines?.map((line, index) => (
+        {lyricsState.lines?.map((line, index) => (
           <StyledText
             key={`${line}-${index.toString()}`}
             selectable

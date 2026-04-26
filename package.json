@@ -1,49 +1,54 @@
 {
-	"name": "reverb",
-	"main": "index.js",
-	"version": "1.0.2",
-	"scripts": {
-		"dev": "expo run:android",
-		"sync-version": "bun scripts/sync-version.js",
-		"generate-icon": "bun scripts/generate-icon.js",
-		"generate-readme-image": "bun scripts/generate-readme-image.js",
-		"check": "ultracite check",
-		"fix": "ultracite fix"
-	},
-	"dependencies": {
-		"@expo/vector-icons": "^15.0.3",
-		"@react-native-async-storage/async-storage": "^2.2.0",
-		"effect": "^3.21.2",
-		"expo": "~55.0.9",
-		"expo-application": "^55.0.14",
-		"expo-constants": "~55.0.0",
-		"expo-file-system": "~55.0.17",
-		"expo-font": "^55.0.4",
-		"expo-haptics": "~55.0.0",
-		"expo-image": "~55.0.9",
-		"expo-image-picker": "~55.0.19",
-		"expo-linking": "~55.0.0",
-		"expo-media-library": "~55.0.15",
-		"expo-router": "~55.0.0",
-		"expo-splash-screen": "^55.0.13",
-		"expo-sqlite": "~55.0.15",
-		"expo-system-ui": "~55.0.0",
-		"react": "19.2.0",
-		"react-native": "0.83.4",
-		"react-native-gesture-handler": "~2.30.0",
-		"react-native-safe-area-context": "^5.6.2",
-		"react-native-screens": "^4.23.0",
-		"react-native-track-player": "^4.1.2"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.4.9",
-		"@types/react": "~19.2.0",
-		"canvas": "^3.2.1",
-		"typescript": "~5.9.2",
-		"ultracite": "^7.4.0"
-	},
-	"private": true,
-	"patchedDependencies": {
-		"react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch"
-	}
+  "name": "reverb",
+  "main": "index.js",
+  "version": "1.0.2",
+  "scripts": {
+    "dev": "expo run:android",
+    "sync-version": "bun scripts/sync-version.js",
+    "generate-icon": "bun scripts/generate-icon.js",
+    "generate-readme-image": "bun scripts/generate-readme-image.js",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-vector-icons/material-icons": "^13.1.1",
+    "effect": "^3.21.2",
+    "expo": "~55.0.9",
+    "expo-application": "^55.0.14",
+    "expo-constants": "~55.0.0",
+    "expo-file-system": "~55.0.17",
+    "expo-font": "^55.0.4",
+    "expo-haptics": "~55.0.0",
+    "expo-image": "~55.0.9",
+    "expo-image-picker": "~55.0.19",
+    "expo-linking": "~55.0.0",
+    "expo-media-library": "~55.0.15",
+    "expo-router": "~55.0.0",
+    "expo-splash-screen": "^55.0.13",
+    "expo-sqlite": "~55.0.15",
+    "expo-system-ui": "~55.0.0",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-gesture-handler": "~2.30.0",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "^4.23.0",
+    "react-native-track-player": "^4.1.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.9",
+    "@types/react": "~19.2.0",
+    "canvas": "^3.2.1",
+    "typescript": "~5.9.2",
+    "ultracite": "^7.4.0"
+  },
+  "private": true,
+  "knip": {
+    "ignore": [
+      "plugins/**"
+    ]
+  },
+  "patchedDependencies": {
+    "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch"
+  }
 }

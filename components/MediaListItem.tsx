@@ -1,14 +1,14 @@
-import type { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
+import type { MaterialIconName } from "@/components/MaterialIcon";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { n } from "@/utils/scaling";
 
 interface MediaListItemProps {
   artworkUri?: string | null;
-  fallbackIcon?: keyof typeof MaterialIcons.glyphMap;
+  fallbackIcon?: MaterialIconName;
   onPress: () => void;
   subtitle?: string;
   title: string;

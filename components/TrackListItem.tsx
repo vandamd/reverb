@@ -1,7 +1,7 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
+import { MaterialIcon, type MaterialIconName } from "@/components/MaterialIcon";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
@@ -15,7 +15,7 @@ interface TrackListItemProps {
   onLongPress?: () => void;
   onPress: () => void;
   onRightPress?: () => void;
-  rightIcon?: keyof typeof MaterialIcons.glyphMap;
+  rightIcon?: MaterialIconName;
   showLikedIndicator?: boolean;
   track: LocalTrack;
 }
@@ -73,7 +73,7 @@ function TrackListItemComponent({
                 {" • "}
               </StyledText>
               <View style={styles.likedIconContainer}>
-                <MaterialIcons color="white" name="favorite" size={n(10)} />
+                <MaterialIcon color="white" name="favorite" size={n(10)} />
               </View>
             </>
           ) : null}
@@ -81,7 +81,7 @@ function TrackListItemComponent({
       </View>
       {rightIcon ? (
         <HapticPressable onPress={onRightPress} style={styles.rightAction}>
-          <MaterialIcons color={colour} name={rightIcon} size={n(26)} />
+          <MaterialIcon color={colour} name={rightIcon} size={n(26)} />
         </HapticPressable>
       ) : null}
     </HapticPressable>

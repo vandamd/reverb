@@ -53,7 +53,6 @@ export default function NewPlaylistScreen() {
         </View>
       ) : null}
       <TextInput
-        autoFocus
         onChangeText={setName}
         onSubmit={save}
         placeholder="Playlist name"

@@ -64,7 +64,7 @@ export default function AlbumsScreen() {
       },
     },
     rightAction: {
-      icon: "multitrack-audio" as const,
+      icon: "graphic-eq" as const,
       onPress: () => {
         router.push("/playing" as Href);
       },

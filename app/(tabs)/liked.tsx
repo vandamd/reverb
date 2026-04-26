@@ -43,7 +43,7 @@ export default function LikedSongsScreen() {
       keyExtractor={(track) => track.id}
       renderItem={renderTrack}
       rightAction={{
-        icon: "multitrack-audio",
+        icon: "graphic-eq",
         onPress: () => {
           router.push("/playing" as Href);
         },

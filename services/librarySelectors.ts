@@ -5,7 +5,7 @@ const collator = new Intl.Collator("en-GB", {
   sensitivity: "base",
 });
 
-export const sortTracks = (tracks: LocalTrack[]) =>
+const sortTracks = (tracks: LocalTrack[]) =>
   [...tracks].sort((left, right) => {
     const disc = (left.discNumber ?? 0) - (right.discNumber ?? 0);
     if (disc !== 0) {
