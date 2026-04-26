@@ -5,6 +5,7 @@ import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
+import { useTrackLiked } from "@/contexts/LibraryContext";
 import { formatDuration } from "@/services/librarySelectors";
 import type { LocalTrack } from "@/types/music";
 import { n } from "@/utils/scaling";
@@ -30,6 +31,7 @@ function TrackListItemComponent({
 }: TrackListItemProps) {
   const { invertColors } = useInvertColors();
   const colour = invertColors ? "black" : "white";
+  const isLiked = useTrackLiked(track.id, track.liked);
 
   return (
     <HapticPressable
@@ -65,7 +67,7 @@ function TrackListItemComponent({
           >
             {track.artist} • {formatDuration(track.durationMs)}
           </StyledText>
-          {showLikedIndicator && track.liked ? (
+          {showLikedIndicator && isLiked ? (
             <>
               <StyledText style={[styles.subtitle, styles.likedSeparator]}>
                 {" • "}

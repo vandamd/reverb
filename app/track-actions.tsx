@@ -8,6 +8,7 @@ import {
   useLibraryActions,
   useLibraryPlaylists,
   useLibraryTracks,
+  useTrackLiked,
 } from "@/contexts/LibraryContext";
 
 export default function TrackActionsScreen() {
@@ -23,6 +24,7 @@ export default function TrackActionsScreen() {
   const { getPlaylistTracks, playlists } = useLibraryPlaylists();
   const { trackById } = useLibraryTracks();
   const track = trackById.get(trackId);
+  const isTrackLiked = useTrackLiked(track?.id, track?.liked ?? false);
   const playlist = playlists.find((item) => item.id === playlistId);
   const playlistTracks = getPlaylistTracks(playlist);
   const playlistTrackIndex = playlistTracks.findIndex(
@@ -64,9 +66,9 @@ export default function TrackActionsScreen() {
       {hideLikedSongs ? null : (
         <StyledButton
           onPress={async () => {
-            await setTrackLiked(track.id, !track.liked);
+            await setTrackLiked(track.id, !isTrackLiked);
           }}
-          text={track.liked ? "Unlike Track" : "Like Track"}
+          text={isTrackLiked ? "Unlike Track" : "Like Track"}
         />
       )}
       {playlist || hidePlaylists ? null : (
