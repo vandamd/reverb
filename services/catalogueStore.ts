@@ -145,45 +145,56 @@ export const getTracks = async (): Promise<LocalTrack[]> => {
   return rows.map(toLocalTrack);
 };
 
+export const getTracksForScan = async (): Promise<LocalTrack[]> => {
+  const database = await openDatabase();
+  const rows = await database.getAllAsync<TrackRow>("SELECT * FROM tracks");
+  return rows.map(toLocalTrack);
+};
+
+const BATCH_SIZE = 40;
+
 export const replaceScannedTracks = async (
   scannedTracks: ScannedTrack[]
 ): Promise<LocalTrack[]> => {
   const database = await openDatabase();
   const scannedIds = new Set(scannedTracks.map((track) => track.id));
   const existingRows = await database.getAllAsync<
-    Pick<TrackRow, "id" | "liked">
-  >("SELECT id, liked FROM tracks");
-  const likedById = new Map(existingRows.map((row) => [row.id, row.liked]));
+    Pick<TrackRow, "id" | "liked" | "modified_at_ms" | "size_bytes">
+  >("SELECT id, liked, modified_at_ms, size_bytes FROM tracks");
+
+  const existingById = new Map(
+    existingRows.map((row) => [
+      row.id,
+      {
+        liked: row.liked,
+        modifiedAtMs: row.modified_at_ms,
+        sizeBytes: row.size_bytes,
+      },
+    ])
+  );
+
+  const changedTracks = scannedTracks.filter((track) => {
+    const existing = existingById.get(track.id);
+    if (!existing) {
+      return true;
+    }
+    return (
+      track.sizeBytes !== existing.sizeBytes ||
+      track.modifiedAtMs !== existing.modifiedAtMs
+    );
+  });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    const upsert = await transaction.prepareAsync(`
-      INSERT INTO tracks (
-        id, uri, file_name, folder_path, title, artist, album, album_artist,
-        duration_ms, track_number, disc_number, year, mime_type, size_bytes,
-        modified_at_ms, artwork_cache_key, artwork_uri, liked
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        uri = excluded.uri,
-        file_name = excluded.file_name,
-        folder_path = excluded.folder_path,
-        title = excluded.title,
-        artist = excluded.artist,
-        album = excluded.album,
-        album_artist = excluded.album_artist,
-        duration_ms = excluded.duration_ms,
-        track_number = excluded.track_number,
-        disc_number = excluded.disc_number,
-        year = excluded.year,
-        mime_type = excluded.mime_type,
-        size_bytes = excluded.size_bytes,
-        modified_at_ms = excluded.modified_at_ms,
-        artwork_cache_key = excluded.artwork_cache_key,
-        artwork_uri = excluded.artwork_uri,
-        liked = tracks.liked
-    `);
-    try {
-      for (const track of scannedTracks) {
-        await upsert.executeAsync([
+    if (changedTracks.length > 0) {
+      const columnCount = 18;
+      const singleRowPlaceholder = `(${Array.from({ length: columnCount }, () => "?").join(", ")})`;
+
+      for (let i = 0; i < changedTracks.length; i += BATCH_SIZE) {
+        const batch = changedTracks.slice(i, i + BATCH_SIZE);
+        const valuesPlaceholders = batch
+          .map(() => singleRowPlaceholder)
+          .join(", ");
+        const params = batch.flatMap((track) => [
           track.id,
           track.contentUri,
           track.fileName,
@@ -201,11 +212,38 @@ export const replaceScannedTracks = async (
           track.modifiedAtMs,
           track.artworkCacheKey ?? null,
           track.artworkUri ?? null,
-          likedById.get(track.id) ?? 0,
+          existingById.get(track.id)?.liked ?? 0,
         ]);
+
+        await transaction.runAsync(
+          `
+          INSERT INTO tracks (
+            id, uri, file_name, folder_path, title, artist, album, album_artist,
+            duration_ms, track_number, disc_number, year, mime_type, size_bytes,
+            modified_at_ms, artwork_cache_key, artwork_uri, liked
+          ) VALUES ${valuesPlaceholders}
+          ON CONFLICT(id) DO UPDATE SET
+            uri = excluded.uri,
+            file_name = excluded.file_name,
+            folder_path = excluded.folder_path,
+            title = excluded.title,
+            artist = excluded.artist,
+            album = excluded.album,
+            album_artist = excluded.album_artist,
+            duration_ms = excluded.duration_ms,
+            track_number = excluded.track_number,
+            disc_number = excluded.disc_number,
+            year = excluded.year,
+            mime_type = excluded.mime_type,
+            size_bytes = excluded.size_bytes,
+            modified_at_ms = excluded.modified_at_ms,
+            artwork_cache_key = excluded.artwork_cache_key,
+            artwork_uri = excluded.artwork_uri,
+            liked = tracks.liked
+        `,
+          params
+        );
       }
-    } finally {
-      await upsert.finalizeAsync();
     }
 
     const removedIds = existingRows
