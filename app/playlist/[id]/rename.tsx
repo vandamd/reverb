@@ -45,7 +45,6 @@ export default function RenamePlaylistScreen() {
       }}
     >
       <TextInput
-        autoFocus
         onChangeText={setName}
         onSubmit={save}
         placeholder="Playlist name"

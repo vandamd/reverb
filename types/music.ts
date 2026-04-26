@@ -41,14 +41,3 @@ export interface LocalPlaylist {
 }
 
 export type RepeatMode = "off" | "track" | "queue";
-
-export interface PlaybackState {
-  currentTrack: LocalTrack | null;
-  durationMs: number;
-  index: number;
-  isPlaying: boolean;
-  progressMs: number;
-  queue: LocalTrack[];
-  repeatMode: RepeatMode;
-  shuffle: boolean;
-}

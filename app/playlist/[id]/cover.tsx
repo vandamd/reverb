@@ -1,4 +1,3 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { launchImageLibraryAsync } from "expo-image-picker";
 import {
   type Asset,
@@ -9,7 +8,14 @@ import {
   SortBy,
 } from "expo-media-library";
 import { type Href, router, useLocalSearchParams } from "expo-router";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -21,6 +27,7 @@ import {
 } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { Header } from "@/components/Header";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { StyledText } from "@/components/StyledText";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
@@ -30,6 +37,20 @@ import { n } from "@/utils/scaling";
 
 const COLUMN_COUNT = 3;
 const PAGE_SIZE = 60;
+
+type PhotoLoadState = "denied" | "loaded" | "loading";
+
+interface PhotoGalleryState {
+  hasMore: boolean;
+  loadState: PhotoLoadState;
+  photos: Asset[];
+}
+
+const initialPhotoGalleryState: PhotoGalleryState = {
+  hasMore: true,
+  loadState: "loading",
+  photos: [],
+};
 
 interface PhotoTileProps {
   isSelected: boolean;
@@ -52,14 +73,14 @@ const PhotoTile = memo(function PhotoTile({
       <Image source={{ uri: item.uri }} style={styles.photo} />
       {isSelected ? (
         <View style={styles.selectedOverlay}>
-          <MaterialIcons color="white" name="check-circle" size={n(32)} />
+          <MaterialIcon color="white" name="check-circle" size={n(32)} />
         </View>
       ) : null}
     </HapticPressable>
   );
 });
 
-export default function PlaylistCoverScreen() {
+function usePlaylistCoverController() {
   const { invertColors } = useInvertColors();
   const { id, returnPath } = useLocalSearchParams<{
     id: string;
@@ -67,12 +88,12 @@ export default function PlaylistCoverScreen() {
   }>();
   const { setPlaylistCover } = useLibraryActions();
   const { width } = useWindowDimensions();
-  const [photos, setPhotos] = useState<Asset[]>([]);
+  const [{ hasMore, loadState, photos }, dispatchPhotoGalleryState] =
+    useReducer(
+      (_state: PhotoGalleryState, nextState: PhotoGalleryState) => nextState,
+      initialPhotoGalleryState
+    );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loadState, setLoadState] = useState<"denied" | "loaded" | "loading">(
-    "loading"
-  );
-  const [hasMore, setHasMore] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -157,7 +178,11 @@ export default function PlaylistCoverScreen() {
         }
 
         if (status !== "granted") {
-          setLoadState("denied");
+          dispatchPhotoGalleryState({
+            hasMore: false,
+            loadState: "denied",
+            photos: [],
+          });
           return;
         }
 
@@ -172,12 +197,18 @@ export default function PlaylistCoverScreen() {
 
         photosRef.current = result.assets;
         endCursorRef.current = result.endCursor;
-        setPhotos(result.assets);
-        setHasMore(result.hasNextPage);
-        setLoadState("loaded");
+        dispatchPhotoGalleryState({
+          hasMore: result.hasNextPage,
+          loadState: "loaded",
+          photos: result.assets,
+        });
       } catch {
         if (!cancelled) {
-          setLoadState("denied");
+          dispatchPhotoGalleryState({
+            hasMore: false,
+            loadState: "denied",
+            photos: [],
+          });
         }
       }
     })();
@@ -220,8 +251,11 @@ export default function PlaylistCoverScreen() {
 
       photosRef.current = nextPhotos;
       endCursorRef.current = result.endCursor;
-      setPhotos(nextPhotos);
-      setHasMore(result.hasNextPage);
+      dispatchPhotoGalleryState({
+        hasMore: result.hasNextPage,
+        loadState: "loaded",
+        photos: nextPhotos,
+      });
     } finally {
       loadingMoreRef.current = false;
     }
@@ -314,6 +348,36 @@ export default function PlaylistCoverScreen() {
     ),
     [handleSelect, selectedId, tileSize]
   );
+
+  return {
+    error,
+    handleBack,
+    handleSave,
+    handleUseSystemPicker,
+    invertColors,
+    isSaving,
+    loadMore,
+    loadState,
+    photos,
+    renderItem,
+    selectedId,
+  };
+}
+
+export default function PlaylistCoverScreen() {
+  const {
+    error,
+    handleBack,
+    handleSave,
+    handleUseSystemPicker,
+    invertColors,
+    isSaving,
+    loadMore,
+    loadState,
+    photos,
+    renderItem,
+    selectedId,
+  } = usePlaylistCoverController();
 
   return (
     <SwipeBackContainer enabled onSwipeBack={handleBack}>

@@ -1,12 +1,11 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { TextInput as RNTextInput, StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { getInactiveNavbarIconColour } from "@/utils/colours";
 import { n } from "@/utils/scaling";
 
 interface TextInputProps {
-  autoFocus?: boolean;
   onChangeText: (text: string) => void;
   onSubmit?: () => void;
   placeholder: string;
@@ -18,7 +17,6 @@ export function TextInput({
   onChangeText,
   placeholder,
   onSubmit,
-  autoFocus = false,
 }: TextInputProps) {
   const { invertColors } = useInvertColors();
 
@@ -36,7 +34,6 @@ export function TextInput({
         allowFontScaling={false}
         autoCapitalize="none"
         autoCorrect={false}
-        autoFocus={autoFocus}
         cursorColor={textColor}
         onChangeText={onChangeText}
         onSubmitEditing={onSubmit}
@@ -49,7 +46,7 @@ export function TextInput({
       />
       {value.length > 0 && (
         <HapticPressable onPress={handleClear} style={styles.clearButton}>
-          <MaterialIcons color={textColor} name="close" size={n(24)} />
+          <MaterialIcon color={textColor} name="close" size={n(24)} />
         </HapticPressable>
       )}
     </View>

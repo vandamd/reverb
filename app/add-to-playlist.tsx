@@ -1,4 +1,3 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -6,6 +5,7 @@ import ContentContainer from "@/components/ContentContainer";
 import { ContentList } from "@/components/ContentList";
 import { EmptyState } from "@/components/EmptyState";
 import { HapticPressable } from "@/components/HapticPressable";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
@@ -92,7 +92,7 @@ export default function AddToPlaylistScreen() {
               {summariseTracks(tracks)}
             </StyledText>
           </View>
-          <MaterialIcons
+          <MaterialIcon
             color={textColor}
             name={
               isSelected ? "radio-button-checked" : "radio-button-unchecked"

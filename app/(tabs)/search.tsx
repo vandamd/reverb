@@ -26,7 +26,6 @@ export default function SearchScreen() {
       }}
     >
       <TextInput
-        autoFocus
         onChangeText={setQuery}
         onSubmit={handleSearch}
         placeholder="Search library"

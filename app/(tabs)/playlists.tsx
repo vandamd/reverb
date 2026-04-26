@@ -82,7 +82,7 @@ export default function PlaylistsScreen() {
       }}
       renderItem={renderPlaylist}
       rightAction={{
-        icon: "multitrack-audio",
+        icon: "graphic-eq",
         onPress: () => {
           router.push("/playing" as Href);
         },

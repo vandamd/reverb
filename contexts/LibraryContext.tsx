@@ -6,7 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useReducer,
 } from "react";
 import {
   addTrackToPlaylist as addTrackToPlaylistStore,
@@ -124,18 +124,113 @@ const LibraryActionsContext = createContext<
   | undefined
 >(undefined);
 
+interface LibraryState {
+  error: string | null;
+  isLoading: boolean;
+  isScanning: boolean;
+  likedTrackIds: ReadonlySet<string>;
+  permissionStatus: PermissionStatus | "unknown";
+  playlists: LocalPlaylist[];
+  tracks: LocalTrack[];
+}
+
+type LibraryAction =
+  | {
+      payload: {
+        playlists: LocalPlaylist[];
+        tracks: LocalTrack[];
+      };
+      type: "catalogueLoaded";
+    }
+  | { payload: string; type: "failed" }
+  | { payload: PermissionStatus; type: "permissionChanged" }
+  | { payload: LocalPlaylist[]; type: "playlistsChanged" }
+  | { payload: boolean; type: "scanningChanged" }
+  | { payload: { liked: boolean; trackId: string }; type: "trackLikedChanged" };
+
+const getLikedTrackIds = (tracks: LocalTrack[]) =>
+  new Set(tracks.filter((track) => track.liked).map((track) => track.id));
+
+const initialLibraryState: LibraryState = {
+  error: null,
+  isLoading: true,
+  isScanning: false,
+  likedTrackIds: new Set(),
+  permissionStatus: "unknown",
+  playlists: [],
+  tracks: [],
+};
+
+const libraryReducer = (
+  state: LibraryState,
+  action: LibraryAction
+): LibraryState => {
+  switch (action.type) {
+    case "catalogueLoaded":
+      return {
+        ...state,
+        error: null,
+        isLoading: false,
+        likedTrackIds: getLikedTrackIds(action.payload.tracks),
+        playlists: action.payload.playlists,
+        tracks: action.payload.tracks,
+      };
+    case "failed":
+      return {
+        ...state,
+        error: action.payload,
+        isLoading: false,
+      };
+    case "permissionChanged":
+      return {
+        ...state,
+        permissionStatus: action.payload,
+      };
+    case "playlistsChanged":
+      return {
+        ...state,
+        playlists: action.payload,
+      };
+    case "scanningChanged":
+      return {
+        ...state,
+        error: action.payload ? null : state.error,
+        isLoading: action.payload ? state.isLoading : false,
+        isScanning: action.payload,
+      };
+    case "trackLikedChanged": {
+      const nextIds = new Set(state.likedTrackIds);
+      if (action.payload.liked) {
+        nextIds.add(action.payload.trackId);
+      } else {
+        nextIds.delete(action.payload.trackId);
+      }
+      return {
+        ...state,
+        likedTrackIds: nextIds,
+      };
+    }
+    default:
+      return state;
+  }
+};
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 export function LibraryProvider({ children }: { children: ReactNode }) {
-  const [tracks, setTracks] = useState<LocalTrack[]>([]);
-  const [likedTrackIds, setLikedTrackIds] = useState<ReadonlySet<string>>(
-    () => new Set()
-  );
-  const [playlists, setPlaylists] = useState<LocalPlaylist[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isScanning, setIsScanning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [permissionStatus, setPermissionStatus] = useState<
-    PermissionStatus | "unknown"
-  >("unknown");
+  const [
+    {
+      error,
+      isLoading,
+      isScanning,
+      likedTrackIds,
+      permissionStatus,
+      playlists,
+      tracks,
+    },
+    dispatch,
+  ] = useReducer(libraryReducer, initialLibraryState);
 
   const albums = useMemo(() => buildAlbums(tracks), [tracks]);
   const trackById = useMemo(
@@ -152,27 +247,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshLibrary = useCallback(async () => {
-    setIsScanning(true);
-    setError(null);
+    dispatch({ payload: true, type: "scanningChanged" });
     try {
       const result = await runLibraryEffect(refreshCatalogueEffect);
-      setTracks(result.tracks);
-      setLikedTrackIds(
-        new Set(
-          result.tracks.filter((track) => track.liked).map((track) => track.id)
-        )
-      );
-      setPlaylists(result.playlists);
-      setPermissionStatus(result.permission.status);
+      dispatch({ payload: result, type: "catalogueLoaded" });
+      dispatch({
+        payload: result.permission.status,
+        type: "permissionChanged",
+      });
     } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : String(refreshError)
-      );
+      dispatch({ payload: getErrorMessage(refreshError), type: "failed" });
     } finally {
-      setIsScanning(false);
-      setIsLoading(false);
+      dispatch({ payload: false, type: "scanningChanged" });
     }
   }, []);
 
@@ -183,23 +269,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         if (!isMounted) {
           return;
         }
-        setTracks(result.tracks);
-        setLikedTrackIds(
-          new Set(
-            result.tracks
-              .filter((track) => track.liked)
-              .map((track) => track.id)
-          )
-        );
-        setPlaylists(result.playlists);
-        setIsLoading(false);
+        dispatch({ payload: result, type: "catalogueLoaded" });
         if (result.tracks.length === 0) {
           refreshLibrary().catch((refreshError) => {
-            setError(
-              refreshError instanceof Error
-                ? refreshError.message
-                : String(refreshError)
-            );
+            dispatch({
+              payload: getErrorMessage(refreshError),
+              type: "failed",
+            });
           });
         }
       })
@@ -207,10 +283,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         if (!isMounted) {
           return;
         }
-        setError(
-          loadError instanceof Error ? loadError.message : String(loadError)
-        );
-        setIsLoading(false);
+        dispatch({ payload: getErrorMessage(loadError), type: "failed" });
       });
     return () => {
       isMounted = false;
@@ -218,27 +291,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [refreshLibrary]);
 
   const setTrackLiked = useCallback(async (trackId: string, liked: boolean) => {
-    setLikedTrackIds((currentIds) => {
-      const nextIds = new Set(currentIds);
-      if (liked) {
-        nextIds.add(trackId);
-      } else {
-        nextIds.delete(trackId);
-      }
-      return nextIds;
-    });
+    dispatch({ payload: { liked, trackId }, type: "trackLikedChanged" });
 
     try {
       await setTrackLikedStore(trackId, liked);
     } catch (likeError) {
-      setLikedTrackIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        if (liked) {
-          nextIds.delete(trackId);
-        } else {
-          nextIds.add(trackId);
-        }
-        return nextIds;
+      dispatch({
+        payload: { liked: !liked, trackId },
+        type: "trackLikedChanged",
       });
       throw likeError;
     }
@@ -246,48 +306,67 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const createPlaylist = useCallback(
     async (name: string, coverUri?: string | null) => {
-      setPlaylists(await createPlaylistStore(name, coverUri ?? null));
+      dispatch({
+        payload: await createPlaylistStore(name, coverUri ?? null),
+        type: "playlistsChanged",
+      });
     },
     []
   );
 
   const renamePlaylist = useCallback(
     async (playlistId: string, name: string) => {
-      setPlaylists(await renamePlaylistStore(playlistId, name));
+      dispatch({
+        payload: await renamePlaylistStore(playlistId, name),
+        type: "playlistsChanged",
+      });
     },
     []
   );
 
   const deletePlaylist = useCallback(async (playlistId: string) => {
-    setPlaylists(await deletePlaylistStore(playlistId));
+    dispatch({
+      payload: await deletePlaylistStore(playlistId),
+      type: "playlistsChanged",
+    });
   }, []);
 
   const addTrackToPlaylist = useCallback(
     async (playlistId: string, trackId: string) => {
-      setPlaylists(await addTrackToPlaylistStore(playlistId, trackId));
+      dispatch({
+        payload: await addTrackToPlaylistStore(playlistId, trackId),
+        type: "playlistsChanged",
+      });
     },
     []
   );
 
   const removeTrackFromPlaylist = useCallback(
     async (playlistId: string, trackId: string) => {
-      setPlaylists(await removeTrackFromPlaylistStore(playlistId, trackId));
+      dispatch({
+        payload: await removeTrackFromPlaylistStore(playlistId, trackId),
+        type: "playlistsChanged",
+      });
     },
     []
   );
 
   const movePlaylistTrack = useCallback(
     async (playlistId: string, trackId: string, direction: "down" | "up") => {
-      setPlaylists(
-        await movePlaylistTrackStore(playlistId, trackId, direction)
-      );
+      dispatch({
+        payload: await movePlaylistTrackStore(playlistId, trackId, direction),
+        type: "playlistsChanged",
+      });
     },
     []
   );
 
   const setPlaylistCover = useCallback(
     async (playlistId: string, coverUri: string | null) => {
-      setPlaylists(await setPlaylistCoverStore(playlistId, coverUri));
+      dispatch({
+        payload: await setPlaylistCoverStore(playlistId, coverUri),
+        type: "playlistsChanged",
+      });
     },
     []
   );
@@ -414,22 +493,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     </LibraryActionsContext.Provider>
   );
 }
-
-export const useLibrary = () => {
-  const context = useContext(LibraryContext);
-  if (!context) {
-    throw new Error("useLibrary must be used within LibraryProvider");
-  }
-  return context;
-};
-
-export const useLibraryState = () => {
-  const context = useContext(LibraryStateContext);
-  if (!context) {
-    throw new Error("useLibraryState must be used within LibraryProvider");
-  }
-  return context;
-};
 
 export const useLibraryActions = () => {
   const context = useContext(LibraryActionsContext);

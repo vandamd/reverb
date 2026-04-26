@@ -6,8 +6,8 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
-  useState,
 } from "react";
 import { AppState } from "react-native";
 import TrackPlayer, {
@@ -77,6 +77,7 @@ const PlaybackControlsContext = createContext<
 >(undefined);
 
 const playbackProgressUpdateIntervalMs = 1000;
+const restartTrackThresholdMs = 3000;
 let playerSetupPromise: Promise<void> | null = null;
 
 const getErrorCode = (error: unknown) => {
@@ -232,6 +233,69 @@ const shuffledTracksAfterCurrent = (
   return [currentTrack, ...upcomingTracks];
 };
 
+const applyShuffleOn = async (
+  nativeActiveIndex: number | undefined,
+  nextQueue: LocalTrack[]
+) => {
+  await TrackPlayer.removeUpcomingTracks();
+  if (typeof nativeActiveIndex === "number" && nativeActiveIndex > 0) {
+    const indicesToRemove = Array.from(
+      { length: nativeActiveIndex },
+      (_, i) => i
+    );
+    await TrackPlayer.remove(indicesToRemove);
+  }
+  const upcomingTracks = nextQueue.slice(1);
+  if (upcomingTracks.length > 0) {
+    await TrackPlayer.add(upcomingTracks.map(toTrackPlayerTrack));
+  }
+};
+
+const applyShuffleOff = async (
+  nativeActiveIndex: number | undefined,
+  nextIndex: number,
+  nextQueue: LocalTrack[]
+) => {
+  await TrackPlayer.removeUpcomingTracks();
+  if (typeof nativeActiveIndex === "number" && nativeActiveIndex > 0) {
+    const indicesToRemove = Array.from(
+      { length: nativeActiveIndex },
+      (_, i) => i
+    );
+    await TrackPlayer.remove(indicesToRemove);
+  }
+  const tracksAfter = nextQueue.slice(nextIndex + 1);
+  if (tracksAfter.length > 0) {
+    await TrackPlayer.add(tracksAfter.map(toTrackPlayerTrack));
+  }
+  const tracksBefore = nextQueue.slice(0, nextIndex);
+  if (tracksBefore.length > 0) {
+    await TrackPlayer.add(tracksBefore.map(toTrackPlayerTrack), 0);
+  }
+};
+
+const shouldUpdateIndexOnTrackChange = (
+  eventIndex: number,
+  currentIndex: number,
+  playbackState: State | undefined,
+  eventTrack: Track | undefined,
+  eventLastIndex: number | undefined,
+  eventLastPosition: number | undefined,
+  currentQueue: LocalTrack[],
+  currentRepeatMode: RepeatMode
+) =>
+  eventIndex >= 0 &&
+  (!looksLikeStopReset(eventIndex, currentIndex, playbackState) ||
+    looksLikeQueueWrapToStart({
+      candidateIndex: eventIndex,
+      candidateTrack: eventTrack,
+      lastIndex: eventLastIndex,
+      lastPosition: eventLastPosition,
+      queue: currentQueue,
+      repeatMode: currentRepeatMode,
+      trustedIndex: currentIndex,
+    }));
+
 const trackPlayerPlayingStates = new Set<State>([
   State.Buffering,
   State.Loading,
@@ -339,6 +403,11 @@ const getStartPositionMs = (snapshot: {
   progressMs: number;
 }) => Math.min(snapshot.progressMs, snapshot.durationMs);
 
+const clampProgressMs = (progressMs: number, durationMs: number) => {
+  const safeProgressMs = Math.max(0, progressMs);
+  return durationMs > 0 ? Math.min(safeProgressMs, durationMs) : safeProgressMs;
+};
+
 const getSyncIndex = (
   nativeQueue: Track[],
   resolvedQueue: LocalTrack[],
@@ -369,30 +438,65 @@ const getSyncIndex = (
   return null;
 };
 
-export function PlaybackProvider({ children }: { children: ReactNode }) {
+interface PlaybackProviderState {
+  error: string | null;
+  index: number;
+  isSeeking: boolean;
+  playWhenReadyOverride: boolean | undefined;
+  queue: LocalTrack[];
+  repeatMode: RepeatMode;
+  shuffle: boolean;
+  sourceQueue: LocalTrack[];
+  syncedPlaybackState: State | undefined;
+  syncedPlayWhenReady: boolean | undefined;
+  syncedProgress: {
+    duration: number;
+    position: number;
+  } | null;
+}
+
+const initialPlaybackProviderState: PlaybackProviderState = {
+  error: null,
+  index: -1,
+  isSeeking: false,
+  playWhenReadyOverride: undefined,
+  queue: [],
+  repeatMode: "off",
+  shuffle: false,
+  sourceQueue: [],
+  syncedPlaybackState: undefined,
+  syncedPlayWhenReady: undefined,
+  syncedProgress: null,
+};
+
+const playbackProviderReducer = (
+  state: PlaybackProviderState,
+  nextState: Partial<PlaybackProviderState>
+): PlaybackProviderState => ({
+  ...state,
+  ...nextState,
+});
+
+function usePlaybackProviderValues() {
   const playbackState = usePlaybackState();
   const playWhenReady = usePlayWhenReady();
   const progress = useProgress(playbackProgressUpdateIntervalMs);
-  const [syncedPlaybackState, setSyncedPlaybackState] = useState<
-    State | undefined
-  >(undefined);
-  const [syncedPlayWhenReady, setSyncedPlayWhenReady] = useState<
-    boolean | undefined
-  >(undefined);
-  const [syncedProgress, setSyncedProgress] = useState<{
-    duration: number;
-    position: number;
-  } | null>(null);
-  const [sourceQueue, setSourceQueue] = useState<LocalTrack[]>([]);
-  const [queue, setQueue] = useState<LocalTrack[]>([]);
-  const [index, setIndex] = useState(-1);
-  const [shuffle, setShuffleState] = useState(false);
-  const [repeatMode, setRepeatModeState] = useState<RepeatMode>("off");
-  const [error, setError] = useState<string | null>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [playWhenReadyOverride, setPlayWhenReadyOverride] = useState<
-    boolean | undefined
-  >(undefined);
+  const [
+    {
+      error,
+      index,
+      isSeeking,
+      playWhenReadyOverride,
+      queue,
+      repeatMode,
+      shuffle,
+      sourceQueue,
+      syncedPlaybackState,
+      syncedPlayWhenReady,
+      syncedProgress,
+    },
+    updatePlaybackState,
+  ] = useReducer(playbackProviderReducer, initialPlaybackProviderState);
   const playWhenReadyIntentRef = useRef<{
     pending: boolean;
     value: boolean;
@@ -403,6 +507,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     queue: LocalTrack[];
     repeatMode: RepeatMode;
   }>({ index: -1, queue: [], repeatMode: "off" });
+  const shuffleUpdateTokenRef = useRef(0);
+  const isRebuildingQueueRef = useRef(false);
   const currentTrack = index >= 0 ? (queue[index] ?? null) : null;
   const effectivePlaybackState = syncedPlaybackState ?? playbackState.state;
   const effectivePlayWhenReady =
@@ -439,8 +545,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       await ensureTrackPlayerReady();
       await TrackPlayer.reset();
       if (tracks.length === 0) {
-        setQueue([]);
-        setIndex(-1);
+        updatePlaybackState({
+          index: -1,
+          queue: [],
+          syncedProgress: { duration: 0, position: 0 },
+        });
         return;
       }
 
@@ -462,14 +571,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         queue: tracks,
         repeatMode: nextRepeatMode,
       };
-      setQueue(tracks);
-      setIndex(safeIndex);
+      updatePlaybackState({
+        index: safeIndex,
+        queue: tracks,
+        syncedProgress: {
+          duration: tracks[safeIndex].durationMs / 1000,
+          position: startPositionMs / 1000,
+        },
+      });
     },
     [repeatMode]
   );
 
   const rebuildQueueForShuffle = useCallback(
-    async (nextShuffle: boolean) => {
+    async (nextShuffle: boolean, updateToken: number) => {
       if (!currentTrack || index < 0 || sourceQueue.length === 0) {
         return;
       }
@@ -481,26 +596,58 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const upcomingTracks = nextShuffle
-        ? shuffledTracksAfterCurrent(sourceQueue, currentTrack.id).slice(1)
-        : sourceQueue.slice(sourceIndex + 1);
-      const currentAndPreviousTracks = queue.slice(0, index + 1);
-
-      await ensureTrackPlayerReady();
-      await TrackPlayer.removeUpcomingTracks();
-      if (upcomingTracks.length > 0) {
-        await TrackPlayer.add(upcomingTracks.map(toTrackPlayerTrack));
+      const nextQueue = nextShuffle
+        ? shuffledTracksAfterCurrent(sourceQueue, currentTrack.id)
+        : sourceQueue;
+      const nextIndex = nextQueue.findIndex(
+        (track) => track.id === currentTrack.id
+      );
+      if (nextIndex < 0) {
+        return;
       }
 
-      setQueue([...currentAndPreviousTracks, ...upcomingTracks]);
-      setIndex(currentAndPreviousTracks.length - 1);
-      playbackTargetRef.current = {
-        index: currentAndPreviousTracks.length - 1,
-        queue: [...currentAndPreviousTracks, ...upcomingTracks],
-        repeatMode,
-      };
+      if (shuffleUpdateTokenRef.current !== updateToken) {
+        return;
+      }
+
+      await ensureTrackPlayerReady();
+      const [nativeActiveIndex, nativeProgress] = await Promise.all([
+        TrackPlayer.getActiveTrackIndex(),
+        TrackPlayer.getProgress(),
+      ]);
+
+      isRebuildingQueueRef.current = true;
+      try {
+        if (nextShuffle) {
+          await applyShuffleOn(nativeActiveIndex, nextQueue);
+        } else {
+          await applyShuffleOff(nativeActiveIndex, nextIndex, nextQueue);
+        }
+
+        const progressMs = Math.round(nativeProgress.position * 1000);
+        const durationMs =
+          Math.round(nativeProgress.duration * 1000) ||
+          currentTrack.durationMs ||
+          0;
+
+        playbackTargetRef.current = {
+          index: nextIndex,
+          queue: nextQueue,
+          repeatMode,
+        };
+        updatePlaybackState({
+          index: nextIndex,
+          queue: nextQueue,
+          syncedProgress: {
+            duration: nextQueue[nextIndex].durationMs / 1000,
+            position: clampProgressMs(progressMs, durationMs) / 1000,
+          },
+        });
+      } finally {
+        isRebuildingQueueRef.current = false;
+      }
     },
-    [currentTrack, index, queue, repeatMode, sourceQueue]
+    [currentTrack, index, repeatMode, sourceQueue]
   );
 
   const syncPlaybackFromNative = useCallback(async () => {
@@ -544,9 +691,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       if (syncIndex !== null) {
         if (resolvedQueue.length === nativeQueue.length) {
-          setQueue(resolvedQueue);
+          updatePlaybackState({ queue: resolvedQueue });
         }
-        setIndex(syncIndex);
+        updatePlaybackState({ index: syncIndex });
       } else if (
         nativeQueue.length === 0 &&
         playbackTargetRef.current.queue.length > 0 &&
@@ -579,27 +726,36 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      setSyncedPlaybackState(nativePlaybackState.state);
-      setSyncedPlayWhenReady(nativePlayWhenReady);
-      setSyncedProgress(nextSyncedProgress);
-      setError(null);
+      updatePlaybackState({ syncedPlaybackState: nativePlaybackState.state });
+      updatePlaybackState({ syncedPlayWhenReady: nativePlayWhenReady });
+      updatePlaybackState({ syncedProgress: nextSyncedProgress });
+      updatePlaybackState({ error: null });
     } catch (syncError) {
       if (isPlayerNotReadyError(syncError)) {
         playerSetupPromise = null;
       }
-      setError(getErrorMessage(syncError));
+      updatePlaybackState({ error: getErrorMessage(syncError) });
     }
   }, [queue, replaceTrackPlayerQueue, sourceQueue]);
 
   useEffect(() => {
     if (
       syncedProgress &&
+      !isSeeking &&
       (progress.position !== syncedProgress.position ||
         progress.duration !== syncedProgress.duration)
     ) {
-      setSyncedProgress(null);
+      const progressDifference = Math.abs(
+        progress.position - syncedProgress.position
+      );
+      const durationDifference = Math.abs(
+        progress.duration - syncedProgress.duration
+      );
+      if (progressDifference < 0.75 && durationDifference < 0.75) {
+        updatePlaybackState({ syncedProgress: null });
+      }
     }
-  }, [progress.duration, progress.position, syncedProgress]);
+  }, [isSeeking, progress.duration, progress.position, syncedProgress]);
 
   useEffect(() => {
     if (
@@ -607,7 +763,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       playbackState.state !== undefined &&
       playbackState.state !== syncedPlaybackState
     ) {
-      setSyncedPlaybackState(undefined);
+      updatePlaybackState({ syncedPlaybackState: undefined });
     }
   }, [playbackState.state, syncedPlaybackState]);
 
@@ -617,7 +773,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       playWhenReady !== undefined &&
       playWhenReady !== syncedPlayWhenReady
     ) {
-      setSyncedPlayWhenReady(undefined);
+      updatePlaybackState({ syncedPlayWhenReady: undefined });
     }
   }, [playWhenReady, syncedPlayWhenReady]);
 
@@ -627,13 +783,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       playWhenReady === playWhenReadyIntentRef.current.value
     ) {
       playWhenReadyIntentRef.current = null;
-      setPlayWhenReadyOverride(undefined);
+      updatePlaybackState({ playWhenReadyOverride: undefined });
     }
   }, [playWhenReady]);
 
   const clearPlayWhenReady = useCallback(() => {
     playWhenReadyIntentRef.current = null;
-    setPlayWhenReadyOverride(undefined);
+    updatePlaybackState({ playWhenReadyOverride: undefined });
   }, []);
 
   const runWithPlayWhenReady = useCallback(
@@ -642,7 +798,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         pending: true,
         value: nextPlayWhenReady,
       };
-      setPlayWhenReadyOverride(nextPlayWhenReady);
+      updatePlaybackState({ playWhenReadyOverride: nextPlayWhenReady });
 
       try {
         await action();
@@ -687,7 +843,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         TrackPlayer.setRepeatMode(toTrackPlayerRepeatMode(repeatMode))
       )
       .catch((setupError) => {
-        setError(getErrorMessage(setupError));
+        updatePlaybackState({ error: getErrorMessage(setupError) });
       });
   }, [repeatMode]);
 
@@ -707,51 +863,72 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     });
   }, [index, queue]);
 
+  const handlePlaybackPlayWhenReadyChanged = useCallback(
+    (nextPlayWhenReady: boolean) => {
+      updatePlaybackState({ syncedPlayWhenReady: undefined });
+      const intent = playWhenReadyIntentRef.current;
+      if (intent?.pending === false && nextPlayWhenReady === intent.value) {
+        playWhenReadyIntentRef.current = null;
+        updatePlaybackState({ playWhenReadyOverride: undefined });
+      }
+    },
+    []
+  );
+
+  const handlePlaybackQueueEnded = useCallback(
+    (eventTrack: number) => {
+      updatePlaybackState({ index: eventTrack });
+      playbackTargetRef.current = {
+        index: eventTrack,
+        queue,
+        repeatMode,
+      };
+    },
+    [queue, repeatMode]
+  );
+
   useTrackPlayerEvents(playbackEvents, (event) => {
     if (event.type === Event.PlaybackActiveTrackChanged) {
-      setSyncedProgress(null);
+      if (isRebuildingQueueRef.current) {
+        return;
+      }
+      updatePlaybackState({ syncedProgress: null });
       if (
         typeof event.index === "number" &&
-        event.index >= 0 &&
-        (!looksLikeStopReset(event.index, index, effectivePlaybackState) ||
-          looksLikeQueueWrapToStart({
-            candidateIndex: event.index,
-            candidateTrack: event.track,
-            lastIndex: event.lastIndex,
-            lastPosition: event.lastPosition,
-            queue,
-            repeatMode,
-            trustedIndex: index,
-          }))
+        shouldUpdateIndexOnTrackChange(
+          event.index,
+          index,
+          effectivePlaybackState,
+          event.track,
+          event.lastIndex,
+          event.lastPosition,
+          queue,
+          repeatMode
+        )
       ) {
-        setIndex(event.index);
+        updatePlaybackState({ index: event.index });
         playbackTargetRef.current = {
           index: event.index,
           queue,
           repeatMode,
         };
       }
-      setError(null);
+      updatePlaybackState({ error: null });
       return;
     }
 
     if (event.type === Event.PlaybackState) {
-      setSyncedPlaybackState(undefined);
+      updatePlaybackState({ syncedPlaybackState: undefined });
       return;
     }
 
     if (event.type === Event.PlaybackPlayWhenReadyChanged) {
-      setSyncedPlayWhenReady(undefined);
-      const intent = playWhenReadyIntentRef.current;
-      if (intent?.pending === false && event.playWhenReady === intent.value) {
-        playWhenReadyIntentRef.current = null;
-        setPlayWhenReadyOverride(undefined);
-      }
+      handlePlaybackPlayWhenReadyChanged(event.playWhenReady);
       return;
     }
 
     if (event.type === Event.PlaybackError) {
-      setError(event.message);
+      updatePlaybackState({ error: event.message });
       return;
     }
 
@@ -759,12 +936,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       event.type === Event.PlaybackQueueEnded &&
       typeof event.track === "number"
     ) {
-      setIndex(event.track);
-      playbackTargetRef.current = {
-        index: event.track,
-        queue,
-        repeatMode,
-      };
+      handlePlaybackQueueEnded(event.track);
     }
   });
 
@@ -781,13 +953,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       const queueIndex = shuffle ? 0 : clampedIndex;
 
       try {
-        setError(null);
+        updatePlaybackState({ error: null });
         await runWithPlayWhenReady(true, async () => {
-          setSourceQueue(tracks);
+          updatePlaybackState({ sourceQueue: tracks });
           await replaceTrackPlayerQueue(nextQueue, queueIndex, true);
         });
       } catch (playbackError) {
-        setError(getErrorMessage(playbackError));
+        updatePlaybackState({ error: getErrorMessage(playbackError) });
       }
     },
     [replaceTrackPlayerQueue, runWithPlayWhenReady, shuffle]
@@ -799,7 +971,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      setError(null);
+      updatePlaybackState({ error: null });
       await ensureTrackPlayerReady();
       if (repeatMode === "track") {
         await runWithPlayWhenReady(true, async () => {
@@ -815,7 +987,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             await TrackPlayer.skip(0, 0);
             await TrackPlayer.play();
           });
-          setIndex(0);
+          updatePlaybackState({ index: 0 });
           playbackTargetRef.current = { index: 0, queue, repeatMode };
           return;
         }
@@ -828,7 +1000,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         await TrackPlayer.play();
       });
     } catch (skipError) {
-      setError(getErrorMessage(skipError));
+      updatePlaybackState({ error: getErrorMessage(skipError) });
     }
   }, [index, queue, repeatMode, runWithPlayWhenReady]);
 
@@ -838,23 +1010,49 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      setError(null);
+      updatePlaybackState({ error: null });
       await ensureTrackPlayerReady();
+      const currentDurationMs = durationMs || queue[index]?.durationMs || 0;
+      const restartCurrentTrack =
+        clampProgressMs(progressMs, currentDurationMs) >
+        restartTrackThresholdMs;
+
+      if (restartCurrentTrack) {
+        updatePlaybackState({
+          syncedProgress: {
+            duration: currentDurationMs / 1000,
+            position: 0,
+          },
+        });
+        playbackSnapshotRef.current = {
+          durationMs: currentDurationMs,
+          progressMs: 0,
+        };
+        await TrackPlayer.seekTo(0);
+        return;
+      }
+
       const previousIndex = index > 0 ? index - 1 : 0;
       await runWithPlayWhenReady(true, async () => {
         await TrackPlayer.skip(previousIndex, 0);
         await TrackPlayer.play();
       });
-      setIndex(previousIndex);
+      updatePlaybackState({
+        index: previousIndex,
+        syncedProgress: {
+          duration: queue[previousIndex].durationMs / 1000,
+          position: 0,
+        },
+      });
       playbackTargetRef.current = { index: previousIndex, queue, repeatMode };
     } catch (skipError) {
-      setError(getErrorMessage(skipError));
+      updatePlaybackState({ error: getErrorMessage(skipError) });
     }
-  }, [index, queue, repeatMode, runWithPlayWhenReady]);
+  }, [durationMs, index, progressMs, queue, repeatMode, runWithPlayWhenReady]);
 
   const togglePlayPause = useCallback(async () => {
     try {
-      setError(null);
+      updatePlaybackState({ error: null });
       await ensureTrackPlayerReady();
       if (isPlaying) {
         await runWithPlayWhenReady(false, () => TrackPlayer.pause());
@@ -883,7 +1081,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }
       await runWithPlayWhenReady(true, () => TrackPlayer.play());
     } catch (playbackError) {
-      setError(getErrorMessage(playbackError));
+      updatePlaybackState({ error: getErrorMessage(playbackError) });
     }
   }, [
     durationMs,
@@ -897,37 +1095,60 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     runWithPlayWhenReady,
   ]);
 
-  const seekToPosition = useCallback(async (progressMs: number) => {
-    try {
-      setIsSeeking(true);
-      setError(null);
-      await ensureTrackPlayerReady();
-      await TrackPlayer.seekTo(Math.max(0, progressMs) / 1000);
-    } catch (seekError) {
-      setError(getErrorMessage(seekError));
-    } finally {
-      setTimeout(() => {
-        setIsSeeking(false);
-      }, 200);
-    }
-  }, []);
+  const seekToPosition = useCallback(
+    async (nextProgressMs: number) => {
+      const nextDurationMs = durationMs || currentTrack?.durationMs || 0;
+      const clampedProgressMs = clampProgressMs(nextProgressMs, nextDurationMs);
+
+      updatePlaybackState({
+        error: null,
+        isSeeking: true,
+        syncedProgress: {
+          duration: nextDurationMs / 1000,
+          position: clampedProgressMs / 1000,
+        },
+      });
+      playbackSnapshotRef.current = {
+        durationMs: nextDurationMs,
+        progressMs: clampedProgressMs,
+      };
+
+      try {
+        await ensureTrackPlayerReady();
+        await TrackPlayer.seekTo(clampedProgressMs / 1000);
+      } catch (seekError) {
+        updatePlaybackState({ error: getErrorMessage(seekError) });
+      } finally {
+        setTimeout(() => {
+          updatePlaybackState({ isSeeking: false });
+        }, 200);
+      }
+    },
+    [currentTrack?.durationMs, durationMs]
+  );
 
   const setRepeatMode = useCallback((nextRepeatMode: RepeatMode) => {
-    setRepeatModeState(nextRepeatMode);
+    updatePlaybackState({ repeatMode: nextRepeatMode });
     ensureTrackPlayerReady()
       .then(() =>
         TrackPlayer.setRepeatMode(toTrackPlayerRepeatMode(nextRepeatMode))
       )
       .catch((repeatError) => {
-        setError(getErrorMessage(repeatError));
+        updatePlaybackState({ error: getErrorMessage(repeatError) });
       });
   }, []);
 
   const setShuffle = useCallback(
     (nextShuffle: boolean) => {
-      setShuffleState(nextShuffle);
-      rebuildQueueForShuffle(nextShuffle).catch((shuffleError) => {
-        setError(getErrorMessage(shuffleError));
+      const updateToken = shuffleUpdateTokenRef.current + 1;
+      shuffleUpdateTokenRef.current = updateToken;
+      updatePlaybackState({ shuffle: nextShuffle });
+      rebuildQueueForShuffle(nextShuffle, updateToken).catch((shuffleError) => {
+        if (shuffleUpdateTokenRef.current !== updateToken) {
+          return;
+        }
+        updatePlaybackState({ shuffle: !nextShuffle });
+        updatePlaybackState({ error: getErrorMessage(shuffleError) });
       });
     },
     [rebuildQueueForShuffle]
@@ -1021,6 +1242,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     ]
   );
 
+  return {
+    controlsValue,
+    progressValue,
+    statusValue,
+    trackValue,
+    value,
+  };
+}
+
+export function PlaybackProvider({ children }: { children: ReactNode }) {
+  const { controlsValue, progressValue, statusValue, trackValue, value } =
+    usePlaybackProviderValues();
+
   return (
     <PlaybackControlsContext.Provider value={controlsValue}>
       <PlaybackTrackContext.Provider value={trackValue}>
@@ -1035,14 +1269,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     </PlaybackControlsContext.Provider>
   );
 }
-
-export const usePlayback = () => {
-  const context = useContext(PlaybackContext);
-  if (!context) {
-    throw new Error("usePlayback must be used within PlaybackProvider");
-  }
-  return context;
-};
 
 export const usePlaybackTrack = () => {
   const context = useContext(PlaybackTrackContext);

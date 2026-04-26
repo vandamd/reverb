@@ -1,12 +1,12 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { memo } from "react";
 import { type StyleProp, StyleSheet, View, type ViewStyle } from "react-native";
+import { MaterialIcon, type MaterialIconName } from "@/components/MaterialIcon";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { n } from "@/utils/scaling";
 
 interface TrackArtworkProps {
-  fallbackIcon?: keyof typeof MaterialIcons.glyphMap;
+  fallbackIcon?: MaterialIconName;
   recycleOnUriChange?: boolean;
   size: number;
   style?: StyleProp<ViewStyle>;
@@ -47,7 +47,7 @@ function TrackArtworkComponent({
           transition={0}
         />
       ) : (
-        <MaterialIcons
+        <MaterialIcon
           color={colour}
           name={fallbackIcon}
           size={n(size * 0.54)}

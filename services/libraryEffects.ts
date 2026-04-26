@@ -7,53 +7,65 @@ import {
   replaceScannedTracks,
 } from "@/services/catalogueStore";
 
-const asError = (error: unknown) =>
-  error instanceof Error ? error : new Error(String(error));
+class LibraryEffectError extends Error {
+  readonly _tag = "LibraryEffectError";
+  override readonly cause: unknown;
 
-export const loadCatalogueEffect = Effect.tryPromise({
-  try: async () => {
-    await initialiseCatalogueStore();
-    const [tracks, playlists] = await Promise.all([
-      getTracks(),
-      getPlaylists(),
-    ]);
-    return { tracks, playlists };
-  },
-  catch: asError,
+  constructor(cause: unknown) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    super(error.message);
+    this.cause = cause;
+  }
+}
+
+const tryLibraryPromise = <A>(promise: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: promise,
+    catch: (error) => new LibraryEffectError(error),
+  });
+
+const getCatalogueEffect = Effect.all({
+  playlists: tryLibraryPromise(getPlaylists),
+  tracks: tryLibraryPromise(getTracks),
 });
 
-export const refreshCatalogueEffect = Effect.tryPromise({
-  try: async () => {
-    await initialiseCatalogueStore();
-    const permission = await ReverbScanner.requestAudioPermissionsAsync();
-    if (!permission.granted) {
-      const [tracks, playlists] = await Promise.all([
-        getTracks(),
-        getPlaylists(),
-      ]);
-      return {
-        tracks,
-        playlists,
-        permission,
-        scannedCount: 0,
-      };
-    }
+export const loadCatalogueEffect = Effect.gen(function* () {
+  yield* tryLibraryPromise(initialiseCatalogueStore);
+  return yield* getCatalogueEffect;
+});
 
-    const existingTracks = await getTracks();
-    const scannedTracks = await ReverbScanner.scanLibrary(existingTracks);
-    const [tracks, playlists] = await Promise.all([
-      replaceScannedTracks(scannedTracks),
-      getPlaylists(),
-    ]);
+export const refreshCatalogueEffect = Effect.gen(function* () {
+  yield* tryLibraryPromise(initialiseCatalogueStore);
+  const permission = yield* tryLibraryPromise(() =>
+    ReverbScanner.requestAudioPermissionsAsync()
+  );
+
+  if (!permission.granted) {
+    const catalogue = yield* getCatalogueEffect;
     return {
-      tracks,
-      playlists,
+      ...catalogue,
       permission,
-      scannedCount: scannedTracks.length,
+      scannedCount: 0,
     };
-  },
-  catch: asError,
+  }
+
+  const existingTracks = yield* tryLibraryPromise(getTracks);
+  const scannedTracks = yield* tryLibraryPromise(() =>
+    ReverbScanner.scanLibrary(existingTracks)
+  );
+  const [tracks, playlists] = yield* Effect.all([
+    tryLibraryPromise(() => replaceScannedTracks(scannedTracks)),
+    tryLibraryPromise(getPlaylists),
+  ]);
+
+  return {
+    tracks,
+    playlists,
+    permission,
+    scannedCount: scannedTracks.length,
+  };
 });
 
-export const runLibraryEffect = <A>(effect: Effect.Effect<A, Error>) =>
-  Effect.runPromise(effect);
+export const runLibraryEffect = <A>(
+  effect: Effect.Effect<A, LibraryEffectError>
+) => Effect.runPromise(effect);

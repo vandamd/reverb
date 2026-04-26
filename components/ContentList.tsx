@@ -1,4 +1,3 @@
-import type { MaterialIcons } from "@expo/vector-icons";
 import { router, useSegments } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import {
@@ -10,13 +9,14 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Header } from "@/components/Header";
+import type { MaterialIconName } from "@/components/MaterialIcon";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { useScrollIndicator } from "@/hooks/useScrollIndicator";
 import { n } from "@/utils/scaling";
 
 interface Action {
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: MaterialIconName;
   onPress: () => void;
   show?: boolean;
 }

@@ -1,19 +1,19 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
+import { MaterialIcon, type MaterialIconName } from "@/components/MaterialIcon";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { n } from "@/utils/scaling";
 import { HapticPressable } from "./HapticPressable";
 import { StyledText } from "./StyledText";
 
 interface RightAction {
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: MaterialIconName;
   onPress: () => void;
   show?: boolean;
 }
 
 interface LeftAction {
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: MaterialIconName;
   onPress: () => void;
   show?: boolean;
 }
@@ -52,11 +52,7 @@ export function Header({
     leftButton = (
       <HapticPressable onPress={leftAction.onPress}>
         <View style={styles.button}>
-          <MaterialIcons
-            color={iconColor}
-            name={leftAction.icon}
-            size={n(28)}
-          />
+          <MaterialIcon color={iconColor} name={leftAction.icon} size={n(28)} />
         </View>
       </HapticPressable>
     );
@@ -64,7 +60,7 @@ export function Header({
     leftButton = (
       <HapticPressable onPress={handleBack}>
         <View style={styles.button}>
-          <MaterialIcons color={iconColor} name="arrow-back-ios" size={n(28)} />
+          <MaterialIcon color={iconColor} name="arrow-back-ios" size={n(28)} />
         </View>
       </HapticPressable>
     );
@@ -86,7 +82,7 @@ export function Header({
       {rightAction?.show !== false && rightAction?.icon ? (
         <HapticPressable onPress={rightAction.onPress}>
           <View style={styles.button}>
-            <MaterialIcons
+            <MaterialIcon
               color={iconColor}
               name={rightAction.icon}
               size={n(28)}

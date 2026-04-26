@@ -1,4 +1,3 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, router } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -13,6 +12,7 @@ import {
 } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
 import { HapticPressable } from "@/components/HapticPressable";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useCustomiseSettings } from "@/contexts/CustomiseSettingsContext";
@@ -32,6 +32,40 @@ import { formatDuration, getAlbumId } from "@/services/librarySelectors";
 import type { LocalTrack, RepeatMode } from "@/types/music";
 import { n } from "@/utils/scaling";
 
+const startMarqueeAnimation = ({
+  delay,
+  distance,
+  duration,
+  animatedValue,
+}: {
+  delay: number;
+  distance: number;
+  duration: number;
+  animatedValue: Animated.Value;
+}) => {
+  animatedValue.setValue(0);
+
+  const animation = Animated.loop(
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(animatedValue, {
+        toValue: -distance,
+        duration,
+        useNativeDriver: true,
+      }),
+      Animated.delay(500),
+      Animated.timing(animatedValue, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ])
+  );
+
+  animation.start();
+  return () => animation.stop();
+};
+
 function MarqueeText({
   children,
   delay = 1250,
@@ -47,7 +81,7 @@ function MarqueeText({
 }) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
-  const translateX = useRef(new Animated.Value(0)).current;
+  const animatedValue = useRef(new Animated.Value(0)).current;
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     setContainerWidth(event.nativeEvent.layout.width);
@@ -61,35 +95,18 @@ function MarqueeText({
     isActive && textWidth > containerWidth + n(5) && containerWidth > 0;
 
   useEffect(() => {
-    translateX.stopAnimation();
-    translateX.setValue(0);
-
     if (!shouldScroll) {
+      animatedValue.setValue(0);
       return;
     }
 
     const distance = textWidth - containerWidth + n(25);
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(translateX, {
-          duration: children.length * msPerChar,
-          toValue: -distance,
-          useNativeDriver: true,
-        }),
-        Animated.delay(500),
-        Animated.timing(translateX, {
-          duration: 0,
-          toValue: 0,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    animation.start();
-    return () => {
-      animation.stop();
-    };
+    return startMarqueeAnimation({
+      delay,
+      distance,
+      duration: children.length * msPerChar,
+      animatedValue,
+    });
   }, [
     children,
     containerWidth,
@@ -97,7 +114,7 @@ function MarqueeText({
     msPerChar,
     shouldScroll,
     textWidth,
-    translateX,
+    animatedValue,
   ]);
 
   return (
@@ -112,7 +129,7 @@ function MarqueeText({
         <Animated.View
           style={[
             styles.marqueeScrollContainer,
-            { transform: [{ translateX }] },
+            { transform: [{ translateX: animatedValue }] },
           ]}
         >
           <StyledText style={style}>{children}</StyledText>
@@ -144,73 +161,69 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const { seekToPosition } = usePlaybackControls();
   const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
   const progressAnimation = useRef(new Animated.Value(0)).current;
-  const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressBarRef = useRef<View>(null);
+  const textIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const startTimeRef = useRef(0);
+  const startProgressRef = useRef(0);
   const activeDurationMs = durationMs || fallbackDurationMs;
-  const progressRatio =
-    activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
 
   useEffect(() => {
-    setDisplayProgressMs(Math.min(progressMs, activeDurationMs));
-  }, [activeDurationMs, progressMs]);
+    const clampedMs = Math.min(progressMs, activeDurationMs);
+    setDisplayProgressMs(clampedMs);
+    const ratio =
+      activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
+    animationRef.current?.stop();
+    progressAnimation.setValue(ratio);
+    startProgressRef.current = clampedMs;
+    startTimeRef.current = Date.now();
+  }, [activeDurationMs, progressAnimation, progressMs]);
 
   useEffect(() => {
-    progressAnimation.stopAnimation();
+    animationRef.current?.stop();
 
     if (!isPlaying || activeDurationMs <= 0) {
-      Animated.timing(progressAnimation, {
-        duration: 0,
-        easing: Easing.linear,
-        toValue: progressRatio,
+      if (textIntervalRef.current !== null) {
+        clearInterval(textIntervalRef.current);
+        textIntervalRef.current = null;
+      }
+      return;
+    }
+
+    startTimeRef.current = Date.now();
+    startProgressRef.current = Math.min(progressMs, activeDurationMs);
+
+    const clampedMs = Math.min(progressMs, activeDurationMs);
+    const remainingMs = activeDurationMs - clampedMs;
+    const ratio = activeDurationMs > 0 ? clampedMs / activeDurationMs : 0;
+
+    progressAnimation.setValue(ratio);
+
+    if (remainingMs > 0) {
+      animationRef.current = Animated.timing(progressAnimation, {
+        toValue: 1,
+        duration: remainingMs,
         useNativeDriver: true,
-      }).start();
-      return;
+        easing: Easing.linear,
+      });
+      animationRef.current.start();
     }
 
-    progressAnimation.setValue(progressRatio);
-    Animated.timing(progressAnimation, {
-      duration: Math.max(activeDurationMs - progressMs, 0),
-      easing: Easing.linear,
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-
-    return () => {
-      progressAnimation.stopAnimation();
-    };
-  }, [
-    activeDurationMs,
-    isPlaying,
-    progressAnimation,
-    progressMs,
-    progressRatio,
-  ]);
-
-  useEffect(() => {
-    if (progressTickRef.current !== null) {
-      clearInterval(progressTickRef.current);
-      progressTickRef.current = null;
-    }
-
-    if (!isPlaying || activeDurationMs <= 0) {
-      return;
-    }
-
-    const startedAt = Date.now();
-    const startedProgressMs = progressMs;
-    progressTickRef.current = setInterval(() => {
+    textIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTimeRef.current;
       setDisplayProgressMs(
-        Math.min(startedProgressMs + Date.now() - startedAt, activeDurationMs)
+        Math.min(startProgressRef.current + elapsed, activeDurationMs)
       );
     }, 1000);
 
     return () => {
-      if (progressTickRef.current !== null) {
-        clearInterval(progressTickRef.current);
-        progressTickRef.current = null;
+      animationRef.current?.stop();
+      if (textIntervalRef.current !== null) {
+        clearInterval(textIntervalRef.current);
+        textIntervalRef.current = null;
       }
     };
-  }, [activeDurationMs, isPlaying, progressMs]);
+  }, [activeDurationMs, isPlaying, progressAnimation, progressMs]);
 
   const handleProgressBarSeek = (event: GestureResponderEvent) => {
     if (!(activeDurationMs > 0 && progressBarRef.current)) {
@@ -293,7 +306,7 @@ const TransportControls = memo(function TransportControls({
     <View style={styles.controlsZone}>
       <View style={styles.musicControls}>
         <HapticPressable onPress={() => setShuffle(!shuffle)}>
-          <MaterialIcons color={colour} name="shuffle" size={n(30)} />
+          <MaterialIcon color={colour} name="shuffle" size={n(30)} />
           <View
             style={[
               styles.shuffleIndicator,
@@ -309,10 +322,10 @@ const TransportControls = memo(function TransportControls({
             await skipPrevious();
           }}
         >
-          <MaterialIcons color={colour} name="skip-previous" size={n(52)} />
+          <MaterialIcon color={colour} name="skip-previous" size={n(52)} />
         </HapticPressable>
         <HapticPressable onPress={togglePlayPause}>
-          <MaterialIcons
+          <MaterialIcon
             color={colour}
             name={isPlaying ? "pause" : "play-arrow"}
             size={n(52)}
@@ -323,10 +336,10 @@ const TransportControls = memo(function TransportControls({
             await skipNext();
           }}
         >
-          <MaterialIcons color={colour} name="skip-next" size={n(52)} />
+          <MaterialIcon color={colour} name="skip-next" size={n(52)} />
         </HapticPressable>
         <HapticPressable onPress={cycleRepeatMode}>
-          <MaterialIcons
+          <MaterialIcon
             color={colour}
             name={repeatIcon[repeatMode]}
             size={n(30)}
@@ -376,7 +389,7 @@ const ExtraControls = memo(function ExtraControls({
     >
       {!hideLikedSongs && (
         <HapticPressable onPress={onToggleLiked}>
-          <MaterialIcons
+          <MaterialIcon
             color={colour}
             name={track.liked ? "favorite" : "favorite-outline"}
             size={n(30)}
@@ -385,12 +398,12 @@ const ExtraControls = memo(function ExtraControls({
       )}
       {!hideLyrics && (
         <HapticPressable onPress={onLyrics}>
-          <MaterialIcons color={colour} name="mic-external-on" size={n(30)} />
+          <MaterialIcon color={colour} name="mic-external-on" size={n(30)} />
         </HapticPressable>
       )}
       {!hidePlaylists && (
         <HapticPressable onPress={onAddToPlaylist}>
-          <MaterialIcons color={colour} name="add" size={n(30)} />
+          <MaterialIcon color={colour} name="add" size={n(30)} />
         </HapticPressable>
       )}
     </View>
@@ -415,23 +428,48 @@ const EmptyExtraControls = memo(function EmptyExtraControls() {
       ]}
     >
       {!hideLikedSongs && (
-        <MaterialIcons
+        <MaterialIcon
           color="transparent"
           name="favorite-outline"
           size={n(30)}
         />
       )}
       {!hideLyrics && (
-        <MaterialIcons
-          color="transparent"
-          name="mic-external-on"
-          size={n(30)}
-        />
+        <MaterialIcon color="transparent" name="mic-external-on" size={n(30)} />
       )}
       {!hidePlaylists && (
-        <MaterialIcons color="transparent" name="add" size={n(30)} />
+        <MaterialIcon color="transparent" name="add" size={n(30)} />
       )}
     </View>
+  );
+});
+
+const EmptyPlaybackControls = memo(function EmptyPlaybackControls() {
+  return (
+    <>
+      <View style={styles.timeIndicatorContainer}>
+        <View style={styles.progressBarPressable}>
+          <View style={[styles.progressBarBackground, { opacity: 0 }]} />
+        </View>
+        <View style={styles.progressBarInfo}>
+          <StyledText style={[styles.timeText, { opacity: 0 }]}>
+            0:00
+          </StyledText>
+          <StyledText style={[styles.timeText, { opacity: 0 }]}>
+            0:00
+          </StyledText>
+        </View>
+      </View>
+      <View style={styles.controlsZone}>
+        <View style={[styles.musicControls, { opacity: 0 }]}>
+          <MaterialIcon color="transparent" name="shuffle" size={n(30)} />
+          <MaterialIcon color="transparent" name="skip-previous" size={n(52)} />
+          <MaterialIcon color="transparent" name="play-arrow" size={n(52)} />
+          <MaterialIcon color="transparent" name="skip-next" size={n(52)} />
+          <MaterialIcon color="transparent" name="repeat" size={n(30)} />
+        </View>
+      </View>
+    </>
   );
 });
 
@@ -490,37 +528,6 @@ export default function PlayingScreen() {
     );
   }, [visibleTrack]);
 
-  const renderEmptyControls = () => (
-    <>
-      <View style={styles.timeIndicatorContainer}>
-        <View style={styles.progressBarPressable}>
-          <View style={[styles.progressBarBackground, { opacity: 0 }]} />
-        </View>
-        <View style={styles.progressBarInfo}>
-          <StyledText style={[styles.timeText, { opacity: 0 }]}>
-            0:00
-          </StyledText>
-          <StyledText style={[styles.timeText, { opacity: 0 }]}>
-            0:00
-          </StyledText>
-        </View>
-      </View>
-      <View style={styles.controlsZone}>
-        <View style={[styles.musicControls, { opacity: 0 }]}>
-          <MaterialIcons color="transparent" name="shuffle" size={n(30)} />
-          <MaterialIcons
-            color="transparent"
-            name="skip-previous"
-            size={n(52)}
-          />
-          <MaterialIcons color="transparent" name="play-arrow" size={n(52)} />
-          <MaterialIcons color="transparent" name="skip-next" size={n(52)} />
-          <MaterialIcons color="transparent" name="repeat" size={n(30)} />
-        </View>
-      </View>
-    </>
-  );
-
   if (!displayTrack) {
     return (
       <ContentContainer
@@ -539,7 +546,7 @@ export default function PlayingScreen() {
                 Go back and play something!
               </StyledText>
             </View>
-            {renderEmptyControls()}
+            <EmptyPlaybackControls />
           </View>
           <EmptyExtraControls />
         </View>

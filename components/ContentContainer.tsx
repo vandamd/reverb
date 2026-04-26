@@ -1,27 +1,28 @@
-import type { MaterialIcons } from "@expo/vector-icons";
 import { router, useSegments } from "expo-router";
 import type { ReactNode } from "react";
 import {
   Animated,
+  ScrollView,
   type StyleProp,
   StyleSheet,
   View,
   type ViewStyle,
 } from "react-native";
 import { Header } from "@/components/Header";
+import type { MaterialIconName } from "@/components/MaterialIcon";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { useScrollIndicator } from "@/hooks/useScrollIndicator";
 import { n } from "@/utils/scaling";
 
 interface RightAction {
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: MaterialIconName;
   onPress: () => void;
   show?: boolean;
 }
 
 interface LeftAction {
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: MaterialIconName;
   onPress: () => void;
   show?: boolean;
 }
@@ -126,7 +127,7 @@ export default function ContentContainer({
             ]}
           >
             {scrollable ? (
-              <Animated.ScrollView
+              <ScrollView
                 onLayout={(event) =>
                   setScrollViewHeight(event.nativeEvent.layout.height)
                 }
@@ -150,7 +151,7 @@ export default function ContentContainer({
                 >
                   {children ?? null}
                 </View>
-              </Animated.ScrollView>
+              </ScrollView>
             ) : (
               <View
                 onLayout={(event) =>

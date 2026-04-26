@@ -1,15 +1,15 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { StyleSheet, View } from "react-native";
+import { MaterialIcon, type MaterialIconName } from "@/components/MaterialIcon";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { getInactiveNavbarIconColour } from "@/utils/colours";
 import { n } from "@/utils/scaling";
 import { HapticPressable } from "./HapticPressable";
 
-export const NAVBAR_HEIGHT = n(70);
+const NAVBAR_HEIGHT = n(70);
 
 export interface TabConfigItem {
-  iconName: keyof typeof MaterialIcons.glyphMap;
+  iconName: MaterialIconName;
   name: string;
   screenName: string;
 }
@@ -46,7 +46,7 @@ export function Navbar({
           key={tab.screenName}
           onPress={() => navigation.navigate(tab.screenName)}
         >
-          <MaterialIcons
+          <MaterialIcon
             color={getTabColor(
               tab.screenName === currentScreenName,
               invertColors
