@@ -748,6 +748,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           await TrackPlayer.skip(0, 0);
           await TrackPlayer.play();
           setIndex(0);
+          playbackTargetRef.current = { index: 0, queue, repeatMode };
           return;
         }
         await TrackPlayer.pause();
@@ -759,7 +760,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     } catch (skipError) {
       setError(getErrorMessage(skipError));
     }
-  }, [index, queue.length, repeatMode]);
+  }, [index, queue, repeatMode]);
 
   const skipPrevious = useCallback(async () => {
     if (queue.length === 0 || index < 0) {
@@ -773,10 +774,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       await TrackPlayer.skip(previousIndex, 0);
       await TrackPlayer.play();
       setIndex(previousIndex);
+      playbackTargetRef.current = { index: previousIndex, queue, repeatMode };
     } catch (skipError) {
       setError(getErrorMessage(skipError));
     }
-  }, [index, queue.length]);
+  }, [index, queue, repeatMode]);
 
   const togglePlayPause = useCallback(async () => {
     try {
