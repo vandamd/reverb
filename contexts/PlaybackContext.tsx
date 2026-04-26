@@ -251,8 +251,19 @@ const applyShuffleOn = async (
   }
 };
 
-const applyShuffleOff = async (nextIndex: number, nextQueue: LocalTrack[]) => {
+const applyShuffleOff = async (
+  nativeActiveIndex: number | undefined,
+  nextIndex: number,
+  nextQueue: LocalTrack[]
+) => {
   await TrackPlayer.removeUpcomingTracks();
+  if (typeof nativeActiveIndex === "number" && nativeActiveIndex > 0) {
+    const indicesToRemove = Array.from(
+      { length: nativeActiveIndex },
+      (_, i) => i
+    );
+    await TrackPlayer.remove(indicesToRemove);
+  }
   const tracksAfter = nextQueue.slice(nextIndex + 1);
   if (tracksAfter.length > 0) {
     await TrackPlayer.add(tracksAfter.map(toTrackPlayerTrack));
@@ -610,7 +621,7 @@ function usePlaybackProviderValues() {
         if (nextShuffle) {
           await applyShuffleOn(nativeActiveIndex, nextQueue);
         } else {
-          await applyShuffleOff(nextIndex, nextQueue);
+          await applyShuffleOff(nativeActiveIndex, nextIndex, nextQueue);
         }
 
         const progressMs = Math.round(nativeProgress.position * 1000);
