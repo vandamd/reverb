@@ -353,7 +353,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const effectivePlayWhenReady = syncedPlayWhenReady ?? playWhenReady;
   const isPlaying =
     currentTrack !== null &&
-    (isSeeking ||
+    ((isSeeking && effectivePlayWhenReady === true) ||
       (effectivePlayWhenReady === true &&
         effectivePlaybackState !== undefined &&
         trackPlayerPlayingStates.has(effectivePlaybackState)));
