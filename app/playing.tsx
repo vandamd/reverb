@@ -17,7 +17,11 @@ import { StyledText } from "@/components/StyledText";
 import { TrackArtwork } from "@/components/TrackArtwork";
 import { useCustomiseSettings } from "@/contexts/CustomiseSettingsContext";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { useLibraryActions, useLibraryTracks } from "@/contexts/LibraryContext";
+import {
+  useLibraryActions,
+  useLibraryTracks,
+  useTrackLiked,
+} from "@/contexts/LibraryContext";
 import {
   usePlaybackControls,
   usePlaybackProgress,
@@ -141,13 +145,10 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const progressBarWidthRef = useRef<number | null>(null);
+  const progressBarRef = useRef<View>(null);
   const activeDurationMs = durationMs || fallbackDurationMs;
   const progressRatio =
     activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
-  const handleProgressBarLayout = useCallback((event: LayoutChangeEvent) => {
-    progressBarWidthRef.current = event.nativeEvent.layout.width;
-  }, []);
 
   useEffect(() => {
     setDisplayProgressMs(Math.min(progressMs, activeDurationMs));
@@ -157,7 +158,12 @@ const ProgressIndicator = memo(function ProgressIndicator({
     progressAnimation.stopAnimation();
 
     if (!isPlaying || activeDurationMs <= 0) {
-      progressAnimation.setValue(progressRatio);
+      Animated.timing(progressAnimation, {
+        duration: 0,
+        easing: Easing.linear,
+        toValue: progressRatio,
+        useNativeDriver: true,
+      }).start();
       return;
     }
 
@@ -206,26 +212,31 @@ const ProgressIndicator = memo(function ProgressIndicator({
     };
   }, [activeDurationMs, isPlaying, progressMs]);
 
-  const handleProgressBarSeek = async (event: GestureResponderEvent) => {
-    if (!(activeDurationMs > 0 && progressBarWidthRef.current)) {
+  const handleProgressBarSeek = (event: GestureResponderEvent) => {
+    if (!(activeDurationMs > 0 && progressBarRef.current)) {
       return;
     }
 
-    const seekPositionMs =
-      (event.nativeEvent.locationX / progressBarWidthRef.current) *
-      activeDurationMs;
-    await seekToPosition(seekPositionMs);
+    const touchPageX = event.nativeEvent.pageX;
+
+    progressBarRef.current.measure((_x, _y, width, _height, pageX) => {
+      if (!width) {
+        return;
+      }
+      const seekRatio = Math.max(0, Math.min(1, (touchPageX - pageX) / width));
+      seekToPosition(seekRatio * activeDurationMs);
+    });
   };
 
   return (
     <View style={styles.timeIndicatorContainer}>
       <HapticPressable
         hitSlop={{ bottom: n(18), top: n(18) }}
-        onPress={handleProgressBarSeek}
+        onPressIn={handleProgressBarSeek}
         style={styles.progressBarPressable}
       >
         <View
-          onLayout={handleProgressBarLayout}
+          ref={progressBarRef}
           style={[styles.progressBarBackground, { backgroundColor: colour }]}
         >
           <Animated.View
@@ -435,6 +446,13 @@ export default function PlayingScreen() {
   const visibleTrack = currentTrack
     ? (trackById.get(currentTrack.id) ?? currentTrack)
     : null;
+  const isVisibleTrackLiked = useTrackLiked(
+    visibleTrack?.id,
+    visibleTrack?.liked ?? false
+  );
+  const displayTrack = visibleTrack
+    ? { ...visibleTrack, liked: isVisibleTrackLiked }
+    : null;
 
   const handleTitlePress = useCallback(() => {
     if (!visibleTrack) {
@@ -451,8 +469,8 @@ export default function PlayingScreen() {
     if (!visibleTrack) {
       return;
     }
-    await setTrackLiked(visibleTrack.id, !visibleTrack.liked);
-  }, [setTrackLiked, visibleTrack]);
+    await setTrackLiked(visibleTrack.id, !isVisibleTrackLiked);
+  }, [isVisibleTrackLiked, setTrackLiked, visibleTrack]);
 
   const handleNavigateToAddToPlaylist = useCallback(() => {
     if (!visibleTrack) {
@@ -503,7 +521,7 @@ export default function PlayingScreen() {
     </>
   );
 
-  if (!visibleTrack) {
+  if (!displayTrack) {
     return (
       <ContentContainer
         contentWidth="playing"
@@ -537,7 +555,7 @@ export default function PlayingScreen() {
             recycleOnUriChange={false}
             size={200}
             style={styles.albumArt}
-            uri={visibleTrack.artworkUri}
+            uri={displayTrack.artworkUri}
           />
           <View style={styles.trackInfoContainer}>
             <HapticPressable
@@ -545,17 +563,17 @@ export default function PlayingScreen() {
               style={styles.trackTitlePressable}
             >
               <MarqueeText style={styles.trackName}>
-                {visibleTrack.title}
+                {displayTrack.title}
               </MarqueeText>
             </HapticPressable>
             <StyledText numberOfLines={1} style={styles.artistName}>
-              {visibleTrack.artist}
+              {displayTrack.artist}
             </StyledText>
           </View>
 
           <ProgressIndicator
             colour={colour}
-            fallbackDurationMs={visibleTrack.durationMs}
+            fallbackDurationMs={displayTrack.durationMs}
           />
           <TransportControls
             colour={colour}
@@ -569,7 +587,7 @@ export default function PlayingScreen() {
           onAddToPlaylist={handleNavigateToAddToPlaylist}
           onLyrics={handleNavigateToLyrics}
           onToggleLiked={handleToggleLiked}
-          track={visibleTrack}
+          track={displayTrack}
         />
       </View>
     </ContentContainer>

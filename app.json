@@ -26,18 +26,14 @@
       [
         "expo-font",
         {
-          "fonts": [
-            "./assets/fonts/PublicSans-Regular.ttf"
-          ]
+          "fonts": ["./assets/fonts/PublicSans-Regular.ttf"]
         }
       ],
       [
         "expo-media-library",
         {
           "photosPermission": "Allow Reverb to access your photos for playlist covers.",
-          "granularPermissions": [
-            "photo"
-          ]
+          "granularPermissions": ["photo"]
         }
       ],
       "./plugins/withAndroidConfigChanges",

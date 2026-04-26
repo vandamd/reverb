@@ -64,6 +64,11 @@ interface LibraryContextValue {
   tracks: LocalTrack[];
 }
 
+interface LibraryLikesContextValue {
+  likedTrackIds: ReadonlySet<string>;
+  likedTracks: LocalTrack[];
+}
+
 const LibraryContext = createContext<LibraryContextValue | undefined>(
   undefined
 );
@@ -91,12 +96,11 @@ const LibraryPlaylistsContext = createContext<
   Pick<LibraryContextValue, "getPlaylistTracks" | "playlists"> | undefined
 >(undefined);
 const LibraryTracksContext = createContext<
-  | Pick<
-      LibraryContextValue,
-      "likedTracks" | "searchTracks" | "trackById" | "tracks"
-    >
-  | undefined
+  Pick<LibraryContextValue, "searchTracks" | "trackById" | "tracks"> | undefined
 >(undefined);
+const LibraryLikesContext = createContext<LibraryLikesContextValue | undefined>(
+  undefined
+);
 const LibraryStatusContext = createContext<
   | Pick<
       LibraryContextValue,
@@ -122,6 +126,9 @@ const LibraryActionsContext = createContext<
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [tracks, setTracks] = useState<LocalTrack[]>([]);
+  const [likedTrackIds, setLikedTrackIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [playlists, setPlaylists] = useState<LocalPlaylist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -137,8 +144,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   );
   const searchIndex = useMemo(() => buildTrackSearchIndex(tracks), [tracks]);
   const likedTracks = useMemo(
-    () => tracks.filter((track) => track.liked),
-    [tracks]
+    () =>
+      tracks
+        .filter((track) => likedTrackIds.has(track.id))
+        .map((track) => (track.liked ? track : { ...track, liked: true })),
+    [likedTrackIds, tracks]
   );
 
   const refreshLibrary = useCallback(async () => {
@@ -147,6 +157,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     try {
       const result = await runLibraryEffect(refreshCatalogueEffect);
       setTracks(result.tracks);
+      setLikedTrackIds(
+        new Set(
+          result.tracks.filter((track) => track.liked).map((track) => track.id)
+        )
+      );
       setPlaylists(result.playlists);
       setPermissionStatus(result.permission.status);
     } catch (refreshError) {
@@ -169,6 +184,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           return;
         }
         setTracks(result.tracks);
+        setLikedTrackIds(
+          new Set(
+            result.tracks
+              .filter((track) => track.liked)
+              .map((track) => track.id)
+          )
+        );
         setPlaylists(result.playlists);
         setIsLoading(false);
         if (result.tracks.length === 0) {
@@ -196,12 +218,30 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [refreshLibrary]);
 
   const setTrackLiked = useCallback(async (trackId: string, liked: boolean) => {
-    await setTrackLikedStore(trackId, liked);
-    setTracks((currentTracks) =>
-      currentTracks.map((track) =>
-        track.id === trackId ? { ...track, liked } : track
-      )
-    );
+    setLikedTrackIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (liked) {
+        nextIds.add(trackId);
+      } else {
+        nextIds.delete(trackId);
+      }
+      return nextIds;
+    });
+
+    try {
+      await setTrackLikedStore(trackId, liked);
+    } catch (likeError) {
+      setLikedTrackIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        if (liked) {
+          nextIds.delete(trackId);
+        } else {
+          nextIds.add(trackId);
+        }
+        return nextIds;
+      });
+      throw likeError;
+    }
   }, []);
 
   const createPlaylist = useCallback(
@@ -323,12 +363,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   );
   const trackState = useMemo(
     () => ({
-      likedTracks,
       searchTracks: (query: string) => searchTracks(searchIndex, query),
       trackById,
       tracks,
     }),
-    [likedTracks, searchIndex, trackById, tracks]
+    [searchIndex, trackById, tracks]
+  );
+  const likesState = useMemo(
+    () => ({
+      likedTrackIds,
+      likedTracks,
+    }),
+    [likedTrackIds, likedTracks]
   );
   const statusState = useMemo(
     () => ({
@@ -351,17 +397,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   return (
     <LibraryActionsContext.Provider value={actions}>
       <LibraryStatusContext.Provider value={statusState}>
-        <LibraryTracksContext.Provider value={trackState}>
-          <LibraryPlaylistsContext.Provider value={playlistState}>
-            <LibraryAlbumsContext.Provider value={albumState}>
-              <LibraryStateContext.Provider value={state}>
-                <LibraryContext.Provider value={value}>
-                  {children}
-                </LibraryContext.Provider>
-              </LibraryStateContext.Provider>
-            </LibraryAlbumsContext.Provider>
-          </LibraryPlaylistsContext.Provider>
-        </LibraryTracksContext.Provider>
+        <LibraryLikesContext.Provider value={likesState}>
+          <LibraryTracksContext.Provider value={trackState}>
+            <LibraryPlaylistsContext.Provider value={playlistState}>
+              <LibraryAlbumsContext.Provider value={albumState}>
+                <LibraryStateContext.Provider value={state}>
+                  <LibraryContext.Provider value={value}>
+                    {children}
+                  </LibraryContext.Provider>
+                </LibraryStateContext.Provider>
+              </LibraryAlbumsContext.Provider>
+            </LibraryPlaylistsContext.Provider>
+          </LibraryTracksContext.Provider>
+        </LibraryLikesContext.Provider>
       </LibraryStatusContext.Provider>
     </LibraryActionsContext.Provider>
   );
@@ -413,6 +461,27 @@ export const useLibraryTracks = () => {
     throw new Error("useLibraryTracks must be used within LibraryProvider");
   }
   return context;
+};
+
+export const useLibraryLikedTracks = () => {
+  const context = useContext(LibraryLikesContext);
+  if (!context) {
+    throw new Error(
+      "useLibraryLikedTracks must be used within LibraryProvider"
+    );
+  }
+  return context.likedTracks;
+};
+
+export const useTrackLiked = (
+  trackId: string | undefined,
+  fallback = false
+) => {
+  const context = useContext(LibraryLikesContext);
+  if (!context) {
+    throw new Error("useTrackLiked must be used within LibraryProvider");
+  }
+  return trackId ? context.likedTrackIds.has(trackId) : fallback;
 };
 
 export const useLibraryStatus = () => {
