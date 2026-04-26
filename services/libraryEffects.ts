@@ -3,6 +3,7 @@ import ReverbScanner from "@/modules/reverb-scanner/src/ReverbScannerModule";
 import {
   getPlaylists,
   getTracks,
+  getTracksForScan,
   initialiseCatalogueStore,
   replaceScannedTracks,
 } from "@/services/catalogueStore";
@@ -36,9 +37,15 @@ export const loadCatalogueEffect = Effect.gen(function* () {
 
 export const refreshCatalogueEffect = Effect.gen(function* () {
   yield* tryLibraryPromise(initialiseCatalogueStore);
-  const permission = yield* tryLibraryPromise(() =>
-    ReverbScanner.requestAudioPermissionsAsync()
+  let permission = yield* tryLibraryPromise(() =>
+    ReverbScanner.getAudioPermissionsAsync()
   );
+
+  if (!permission.granted) {
+    permission = yield* tryLibraryPromise(() =>
+      ReverbScanner.requestAudioPermissionsAsync()
+    );
+  }
 
   if (!permission.granted) {
     const catalogue = yield* getCatalogueEffect;
@@ -49,7 +56,7 @@ export const refreshCatalogueEffect = Effect.gen(function* () {
     };
   }
 
-  const existingTracks = yield* tryLibraryPromise(getTracks);
+  const existingTracks = yield* tryLibraryPromise(getTracksForScan);
   const scannedTracks = yield* tryLibraryPromise(() =>
     ReverbScanner.scanLibrary(existingTracks)
   );
