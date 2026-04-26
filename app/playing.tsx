@@ -141,13 +141,10 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const progressBarWidthRef = useRef<number | null>(null);
+  const progressBarRef = useRef<View>(null);
   const activeDurationMs = durationMs || fallbackDurationMs;
   const progressRatio =
     activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
-  const handleProgressBarLayout = useCallback((event: LayoutChangeEvent) => {
-    progressBarWidthRef.current = event.nativeEvent.layout.width;
-  }, []);
 
   useEffect(() => {
     setDisplayProgressMs(Math.min(progressMs, activeDurationMs));
@@ -211,26 +208,31 @@ const ProgressIndicator = memo(function ProgressIndicator({
     };
   }, [activeDurationMs, isPlaying, progressMs]);
 
-  const handleProgressBarSeek = async (event: GestureResponderEvent) => {
-    if (!(activeDurationMs > 0 && progressBarWidthRef.current)) {
+  const handleProgressBarSeek = (event: GestureResponderEvent) => {
+    if (!(activeDurationMs > 0 && progressBarRef.current)) {
       return;
     }
 
-    const seekPositionMs =
-      (event.nativeEvent.locationX / progressBarWidthRef.current) *
-      activeDurationMs;
-    await seekToPosition(seekPositionMs);
+    const touchPageX = event.nativeEvent.pageX;
+
+    progressBarRef.current.measure((_x, _y, width, _height, pageX) => {
+      if (!width) {
+        return;
+      }
+      const seekRatio = Math.max(0, Math.min(1, (touchPageX - pageX) / width));
+      seekToPosition(seekRatio * activeDurationMs);
+    });
   };
 
   return (
     <View style={styles.timeIndicatorContainer}>
       <HapticPressable
         hitSlop={{ bottom: n(18), top: n(18) }}
-        onPress={handleProgressBarSeek}
+        onPressIn={handleProgressBarSeek}
         style={styles.progressBarPressable}
       >
         <View
-          onLayout={handleProgressBarLayout}
+          ref={progressBarRef}
           style={[styles.progressBarBackground, { backgroundColor: colour }]}
         >
           <Animated.View
