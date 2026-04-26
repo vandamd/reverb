@@ -161,48 +161,69 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const progressBarRef = useRef<View>(null);
+  const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const textIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef(0);
+  const startProgressRef = useRef(0);
   const activeDurationMs = durationMs || fallbackDurationMs;
 
   useEffect(() => {
-    setDisplayProgressMs(Math.min(progressMs, activeDurationMs));
-  }, [activeDurationMs, progressMs]);
-
-  useEffect(() => {
-    const currentRatio =
+    const clampedMs = Math.min(progressMs, activeDurationMs);
+    setDisplayProgressMs(clampedMs);
+    const ratio =
       activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
-    progressAnimation.setValue(currentRatio);
-
-    if (!isPlaying || activeDurationMs <= 0 || currentRatio >= 1) {
-      return;
-    }
-
-    const remainingDuration = activeDurationMs - progressMs;
-    const animation = Animated.timing(progressAnimation, {
-      toValue: 1,
-      duration: remainingDuration,
-      useNativeDriver: true,
-    });
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-    };
-  }, [activeDurationMs, isPlaying, progressMs, progressAnimation]);
+    progressAnimation.setValue(ratio);
+    startProgressRef.current = clampedMs;
+    startTimeRef.current = Date.now();
+  }, [activeDurationMs, progressAnimation, progressMs]);
 
   useEffect(() => {
     if (!isPlaying || activeDurationMs <= 0) {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (textIntervalRef.current !== null) {
+        clearInterval(textIntervalRef.current);
+        textIntervalRef.current = null;
+      }
       return;
     }
 
-    const intervalId = setInterval(() => {
-      setDisplayProgressMs((prev) => Math.min(prev + 1000, activeDurationMs));
-    }, 1000);
+    startTimeRef.current = Date.now();
+    startProgressRef.current = Math.min(progressMs, activeDurationMs);
+
+    const tick = () => {
+      const elapsed = Date.now() - startTimeRef.current;
+      const currentMs = Math.min(
+        startProgressRef.current + elapsed,
+        activeDurationMs
+      );
+      const ratio = activeDurationMs > 0 ? currentMs / activeDurationMs : 0;
+      progressAnimation.setValue(ratio);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    textIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTimeRef.current;
+      setDisplayProgressMs(
+        Math.min(startProgressRef.current + elapsed, activeDurationMs)
+      );
+    }, 250);
 
     return () => {
-      clearInterval(intervalId);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (textIntervalRef.current !== null) {
+        clearInterval(textIntervalRef.current);
+        textIntervalRef.current = null;
+      }
     };
-  }, [activeDurationMs, isPlaying]);
+  }, [activeDurationMs, isPlaying, progressAnimation, progressMs]);
 
   const handleProgressBarSeek = (event: GestureResponderEvent) => {
     if (!(activeDurationMs > 0 && progressBarRef.current)) {

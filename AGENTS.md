@@ -2,6 +2,9 @@
 Expo template with pre-built components and patterns.
 
 ## Rules
+- For any file search or grep in the current git indexed directory use fff tools
+- Always use Context7 when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
+- After an implementation, summarise the changes in simple terms with bullet points of previous behaviour and new behaviour
 - Use `n()` for all numeric style values
 - Use bun instead of npm
 - Minimise `useEffect` - see [You Might Not Need an Effect](https://react.dev/learn/you-might-not-need-an-effect)
