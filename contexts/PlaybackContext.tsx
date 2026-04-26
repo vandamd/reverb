@@ -237,6 +237,13 @@ const trackPlayerPlayingStates = new Set<State>([
   State.Loading,
   State.Playing,
 ]);
+const playbackEvents = [
+  Event.PlaybackActiveTrackChanged,
+  Event.PlaybackError,
+  Event.PlaybackPlayWhenReadyChanged,
+  Event.PlaybackQueueEnded,
+  Event.PlaybackState,
+];
 
 const getTrackId = (track: Track) => {
   if (typeof track.id === "string") {
@@ -285,6 +292,46 @@ const looksLikeStopReset = (
   candidateIndex === 0 &&
   trustedIndex > 0 &&
   (playbackState === undefined || !trackPlayerPlayingStates.has(playbackState));
+
+const looksLikeQueueWrapToStart = (snapshot: {
+  candidateIndex: number;
+  candidateTrack?: Track;
+  lastIndex?: number;
+  lastPosition?: number;
+  queue: LocalTrack[];
+  repeatMode: RepeatMode;
+  trustedIndex: number;
+}) => {
+  if (
+    snapshot.repeatMode !== "queue" ||
+    snapshot.candidateIndex !== 0 ||
+    snapshot.trustedIndex !== snapshot.queue.length - 1 ||
+    snapshot.queue.length < 2
+  ) {
+    return false;
+  }
+
+  const candidateTrackId = snapshot.candidateTrack
+    ? getTrackId(snapshot.candidateTrack)
+    : null;
+  if (candidateTrackId && candidateTrackId !== snapshot.queue[0].id) {
+    return false;
+  }
+
+  if (
+    typeof snapshot.lastIndex === "number" &&
+    snapshot.lastIndex !== snapshot.trustedIndex
+  ) {
+    return false;
+  }
+
+  const previousTrackDuration =
+    snapshot.queue[snapshot.trustedIndex].durationMs;
+  return (
+    typeof snapshot.lastPosition !== "number" ||
+    snapshot.lastPosition * 1000 >= previousTrackDuration - 2000
+  );
+};
 
 const getStartPositionMs = (snapshot: {
   durationMs: number;
@@ -603,61 +650,61 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     });
   }, [index, queue]);
 
-  useTrackPlayerEvents(
-    [
-      Event.PlaybackActiveTrackChanged,
-      Event.PlaybackError,
-      Event.PlaybackPlayWhenReadyChanged,
-      Event.PlaybackQueueEnded,
-      Event.PlaybackState,
-    ],
-    (event) => {
-      if (event.type === Event.PlaybackActiveTrackChanged) {
-        setSyncedProgress(null);
-        if (
-          typeof event.index === "number" &&
-          event.index >= 0 &&
-          !looksLikeStopReset(event.index, index, effectivePlaybackState)
-        ) {
-          setIndex(event.index);
-          playbackTargetRef.current = {
-            index: event.index,
+  useTrackPlayerEvents(playbackEvents, (event) => {
+    if (event.type === Event.PlaybackActiveTrackChanged) {
+      setSyncedProgress(null);
+      if (
+        typeof event.index === "number" &&
+        event.index >= 0 &&
+        (!looksLikeStopReset(event.index, index, effectivePlaybackState) ||
+          looksLikeQueueWrapToStart({
+            candidateIndex: event.index,
+            candidateTrack: event.track,
+            lastIndex: event.lastIndex,
+            lastPosition: event.lastPosition,
             queue,
             repeatMode,
-          };
-        }
-        setError(null);
-        return;
-      }
-
-      if (event.type === Event.PlaybackState) {
-        setSyncedPlaybackState(undefined);
-        return;
-      }
-
-      if (event.type === Event.PlaybackPlayWhenReadyChanged) {
-        setSyncedPlayWhenReady(undefined);
-        return;
-      }
-
-      if (event.type === Event.PlaybackError) {
-        setError(event.message);
-        return;
-      }
-
-      if (
-        event.type === Event.PlaybackQueueEnded &&
-        typeof event.track === "number"
+            trustedIndex: index,
+          }))
       ) {
-        setIndex(event.track);
+        setIndex(event.index);
         playbackTargetRef.current = {
-          index: event.track,
+          index: event.index,
           queue,
           repeatMode,
         };
       }
+      setError(null);
+      return;
     }
-  );
+
+    if (event.type === Event.PlaybackState) {
+      setSyncedPlaybackState(undefined);
+      return;
+    }
+
+    if (event.type === Event.PlaybackPlayWhenReadyChanged) {
+      setSyncedPlayWhenReady(undefined);
+      return;
+    }
+
+    if (event.type === Event.PlaybackError) {
+      setError(event.message);
+      return;
+    }
+
+    if (
+      event.type === Event.PlaybackQueueEnded &&
+      typeof event.track === "number"
+    ) {
+      setIndex(event.track);
+      playbackTargetRef.current = {
+        index: event.track,
+        queue,
+        repeatMode,
+      };
+    }
+  });
 
   const playQueue = useCallback(
     async (tracks: LocalTrack[], nextIndex = 0) => {
