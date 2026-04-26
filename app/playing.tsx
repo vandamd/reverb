@@ -157,7 +157,12 @@ const ProgressIndicator = memo(function ProgressIndicator({
     progressAnimation.stopAnimation();
 
     if (!isPlaying || activeDurationMs <= 0) {
-      progressAnimation.setValue(progressRatio);
+      Animated.timing(progressAnimation, {
+        duration: 0,
+        easing: Easing.linear,
+        toValue: progressRatio,
+        useNativeDriver: true,
+      }).start();
       return;
     }
 

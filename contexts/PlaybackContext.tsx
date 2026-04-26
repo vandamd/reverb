@@ -144,6 +144,7 @@ const setupTrackPlayer = () =>
       capabilities: [
         Capability.Play,
         Capability.Pause,
+        Capability.Stop,
         Capability.SkipToNext,
         Capability.SkipToPrevious,
         Capability.SeekTo,
@@ -156,6 +157,7 @@ const setupTrackPlayer = () =>
       notificationCapabilities: [
         Capability.Play,
         Capability.Pause,
+        Capability.Stop,
         Capability.SkipToNext,
         Capability.SkipToPrevious,
         Capability.SeekTo,
@@ -233,10 +235,7 @@ const shuffledTracksAfterCurrent = (
 const trackPlayerPlayingStates = new Set<State>([
   State.Buffering,
   State.Loading,
-  State.Paused,
   State.Playing,
-  State.Ready,
-  State.Stopped,
 ]);
 
 const getTrackId = (track: Track) => {
@@ -278,6 +277,43 @@ const getExistingQueueIndex = (
     : -1;
 };
 
+const looksLikeStopReset = (candidateIndex: number, trustedIndex: number) =>
+  candidateIndex === 0 && trustedIndex > 0;
+
+const getStartPositionMs = (snapshot: {
+  durationMs: number;
+  progressMs: number;
+}) => Math.min(snapshot.progressMs, snapshot.durationMs);
+
+const getSyncIndex = (
+  nativeQueue: Track[],
+  resolvedQueue: LocalTrack[],
+  nativeActiveIndex: number | undefined,
+  existingQueueIndex: number,
+  targetIndex: number
+): number | null => {
+  if (nativeQueue.length > 0 && resolvedQueue.length === nativeQueue.length) {
+    const nativeIndexValid =
+      typeof nativeActiveIndex === "number" &&
+      nativeActiveIndex >= 0 &&
+      nativeActiveIndex < resolvedQueue.length;
+    if (!nativeIndexValid) {
+      return null;
+    }
+    return looksLikeStopReset(nativeActiveIndex, targetIndex)
+      ? targetIndex
+      : nativeActiveIndex;
+  }
+
+  if (existingQueueIndex >= 0) {
+    return looksLikeStopReset(existingQueueIndex, targetIndex)
+      ? null
+      : existingQueueIndex;
+  }
+
+  return null;
+};
+
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const playbackState = usePlaybackState();
   const playWhenReady = usePlayWhenReady();
@@ -299,6 +335,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [repeatMode, setRepeatModeState] = useState<RepeatMode>("off");
   const [error, setError] = useState<string | null>(null);
   const playbackSnapshotRef = useRef({ durationMs: 0, progressMs: 0 });
+  const playbackTargetRef = useRef<{
+    index: number;
+    queue: LocalTrack[];
+    repeatMode: RepeatMode;
+  }>({ index: -1, queue: [], repeatMode: "off" });
   const currentTrack = index >= 0 ? (queue[index] ?? null) : null;
   const effectivePlaybackState = syncedPlaybackState ?? playbackState.state;
   const effectivePlayWhenReady = syncedPlayWhenReady ?? playWhenReady;
@@ -311,9 +352,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     Math.round((syncedProgress?.duration ?? progress.duration) * 1000) ||
     currentTrack?.durationMs ||
     0;
-  const progressMs = Math.round(
-    (syncedProgress?.position ?? progress.position) * 1000
-  );
+  const isEffectivelyStopped =
+    effectivePlaybackState === State.Stopped ||
+    effectivePlaybackState === State.None;
+  const progressMs = isEffectivelyStopped
+    ? 0
+    : Math.round((syncedProgress?.position ?? progress.position) * 1000);
 
   useEffect(() => {
     playbackSnapshotRef.current = { durationMs, progressMs };
@@ -348,6 +392,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         await TrackPlayer.play();
       }
 
+      playbackTargetRef.current = {
+        index: safeIndex,
+        queue: tracks,
+        repeatMode: nextRepeatMode,
+      };
       setQueue(tracks);
       setIndex(safeIndex);
     },
@@ -380,8 +429,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       setQueue([...currentAndPreviousTracks, ...upcomingTracks]);
       setIndex(currentAndPreviousTracks.length - 1);
+      playbackTargetRef.current = {
+        index: currentAndPreviousTracks.length - 1,
+        queue: [...currentAndPreviousTracks, ...upcomingTracks],
+        repeatMode,
+      };
     },
-    [currentTrack, index, queue, sourceQueue]
+    [currentTrack, index, queue, repeatMode, sourceQueue]
   );
 
   const syncPlaybackFromNative = useCallback(async () => {
@@ -414,36 +468,48 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         position: nativeProgress.position,
       };
 
-      if (
-        nativeQueue.length > 0 &&
-        resolvedQueue.length === nativeQueue.length
-      ) {
-        setQueue(resolvedQueue);
-        if (
-          typeof nativeActiveIndex === "number" &&
-          nativeActiveIndex >= 0 &&
-          nativeActiveIndex < resolvedQueue.length
-        ) {
-          setIndex(nativeActiveIndex);
+      const syncIndex = getSyncIndex(
+        nativeQueue,
+        resolvedQueue,
+        nativeActiveIndex,
+        existingQueueIndex,
+        playbackTargetRef.current.index
+      );
+
+      if (syncIndex !== null) {
+        if (resolvedQueue.length === nativeQueue.length) {
+          setQueue(resolvedQueue);
         }
-      } else if (existingQueueIndex >= 0) {
-        setIndex(existingQueueIndex);
-      } else if (nativeQueue.length === 0 && queue.length > 0 && index >= 0) {
+        setIndex(syncIndex);
+      } else if (
+        nativeQueue.length === 0 &&
+        playbackTargetRef.current.queue.length > 0 &&
+        playbackTargetRef.current.index >= 0
+      ) {
         const snapshot = playbackSnapshotRef.current;
-        const startPositionMs = Math.min(
-          snapshot.progressMs,
-          snapshot.durationMs
-        );
+        const target = playbackTargetRef.current;
+        const startPositionMs = getStartPositionMs(snapshot);
         await replaceTrackPlayerQueue(
-          queue,
-          index,
+          target.queue,
+          target.index,
           false,
-          repeatMode,
+          target.repeatMode,
           startPositionMs
         );
         nextSyncedProgress = {
           duration: snapshot.durationMs / 1000,
           position: startPositionMs / 1000,
+        };
+      }
+
+      const isStopped =
+        nativePlaybackState.state === State.Stopped ||
+        nativePlaybackState.state === State.None;
+
+      if (isStopped) {
+        nextSyncedProgress = {
+          duration: nextSyncedProgress.duration,
+          position: 0,
         };
       }
 
@@ -457,7 +523,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }
       setError(getErrorMessage(syncError));
     }
-  }, [index, queue, repeatMode, replaceTrackPlayerQueue, sourceQueue]);
+  }, [queue, replaceTrackPlayerQueue, sourceQueue]);
 
   useEffect(() => {
     if (
@@ -538,7 +604,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     (event) => {
       if (event.type === Event.PlaybackActiveTrackChanged) {
         setSyncedProgress(null);
-        setIndex(typeof event.index === "number" ? event.index : -1);
+        if (
+          typeof event.index === "number" &&
+          event.index >= 0 &&
+          !looksLikeStopReset(event.index, index)
+        ) {
+          setIndex(event.index);
+          playbackTargetRef.current = {
+            index: event.index,
+            queue,
+            repeatMode,
+          };
+        }
         setError(null);
         return;
       }
@@ -563,6 +640,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         typeof event.track === "number"
       ) {
         setIndex(event.track);
+        playbackTargetRef.current = {
+          index: event.track,
+          queue,
+          repeatMode,
+        };
       }
     }
   );
@@ -647,11 +729,39 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         await TrackPlayer.pause();
         return;
       }
+      if (
+        (effectivePlaybackState === State.None ||
+          effectivePlaybackState === State.Stopped) &&
+        queue.length > 0
+      ) {
+        const target =
+          playbackTargetRef.current.queue.length > 0
+            ? playbackTargetRef.current
+            : { index, queue, repeatMode };
+        const startPositionMs = Math.min(progressMs, durationMs);
+        await replaceTrackPlayerQueue(
+          target.queue,
+          Math.max(target.index, 0),
+          true,
+          target.repeatMode,
+          startPositionMs
+        );
+        return;
+      }
       await TrackPlayer.play();
     } catch (playbackError) {
       setError(getErrorMessage(playbackError));
     }
-  }, [isPlaying]);
+  }, [
+    durationMs,
+    effectivePlaybackState,
+    index,
+    isPlaying,
+    progressMs,
+    queue,
+    repeatMode,
+    replaceTrackPlayerQueue,
+  ]);
 
   const seekToPosition = useCallback(async (progressMs: number) => {
     try {
