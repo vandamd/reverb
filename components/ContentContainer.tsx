@@ -1,6 +1,7 @@
 import { router, useSegments } from "expo-router";
 import type { ReactNode } from "react";
 import {
+  Animated,
   ScrollView,
   type StyleProp,
   StyleSheet,
@@ -178,7 +179,7 @@ export default function ContentContainer({
                   },
                 ]}
               >
-                <View
+                <Animated.View
                   style={[
                     styles.scrollIndicatorThumb,
                     {

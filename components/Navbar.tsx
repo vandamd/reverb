@@ -51,7 +51,6 @@ export function Navbar({
               tab.screenName === currentScreenName,
               invertColors
             )}
-            filled
             name={tab.iconName}
             size={n(48)}
           />

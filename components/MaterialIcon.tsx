@@ -33,14 +33,9 @@ export type MaterialIconName = keyof typeof materialIconSymbols;
 
 interface MaterialIconProps
   extends Omit<ComponentProps<typeof MaterialIcons>, "name"> {
-  filled?: boolean;
   name: MaterialIconName;
 }
 
-export function MaterialIcon({
-  filled: _filled,
-  name,
-  ...props
-}: MaterialIconProps) {
+export function MaterialIcon({ name, ...props }: MaterialIconProps) {
   return <MaterialIcons name={materialIconSymbols[name]} {...props} />;
 }

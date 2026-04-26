@@ -2,6 +2,7 @@ import { type Href, router } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type StyleProp,
@@ -161,8 +162,8 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const progressBarRef = useRef<View>(null);
-  const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const textIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
   const startTimeRef = useRef(0);
   const startProgressRef = useRef(0);
   const activeDurationMs = durationMs || fallbackDurationMs;
@@ -172,17 +173,16 @@ const ProgressIndicator = memo(function ProgressIndicator({
     setDisplayProgressMs(clampedMs);
     const ratio =
       activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
+    animationRef.current?.stop();
     progressAnimation.setValue(ratio);
     startProgressRef.current = clampedMs;
     startTimeRef.current = Date.now();
   }, [activeDurationMs, progressAnimation, progressMs]);
 
   useEffect(() => {
+    animationRef.current?.stop();
+
     if (!isPlaying || activeDurationMs <= 0) {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
       if (textIntervalRef.current !== null) {
         clearInterval(textIntervalRef.current);
         textIntervalRef.current = null;
@@ -193,31 +193,31 @@ const ProgressIndicator = memo(function ProgressIndicator({
     startTimeRef.current = Date.now();
     startProgressRef.current = Math.min(progressMs, activeDurationMs);
 
-    const tick = () => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const currentMs = Math.min(
-        startProgressRef.current + elapsed,
-        activeDurationMs
-      );
-      const ratio = activeDurationMs > 0 ? currentMs / activeDurationMs : 0;
-      progressAnimation.setValue(ratio);
-      rafRef.current = requestAnimationFrame(tick);
-    };
+    const clampedMs = Math.min(progressMs, activeDurationMs);
+    const remainingMs = activeDurationMs - clampedMs;
+    const ratio = activeDurationMs > 0 ? clampedMs / activeDurationMs : 0;
 
-    rafRef.current = requestAnimationFrame(tick);
+    progressAnimation.setValue(ratio);
+
+    if (remainingMs > 0) {
+      animationRef.current = Animated.timing(progressAnimation, {
+        toValue: 1,
+        duration: remainingMs,
+        useNativeDriver: true,
+        easing: Easing.linear,
+      });
+      animationRef.current.start();
+    }
 
     textIntervalRef.current = setInterval(() => {
       const elapsed = Date.now() - startTimeRef.current;
       setDisplayProgressMs(
         Math.min(startProgressRef.current + elapsed, activeDurationMs)
       );
-    }, 250);
+    }, 1000);
 
     return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      animationRef.current?.stop();
       if (textIntervalRef.current !== null) {
         clearInterval(textIntervalRef.current);
         textIntervalRef.current = null;
@@ -391,7 +391,6 @@ const ExtraControls = memo(function ExtraControls({
         <HapticPressable onPress={onToggleLiked}>
           <MaterialIcon
             color={colour}
-            filled={track.liked}
             name={track.liked ? "favorite" : "favorite-outline"}
             size={n(30)}
           />

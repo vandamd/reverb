@@ -1,6 +1,7 @@
 import { router, useSegments } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import {
+  Animated,
   FlatList,
   type FlatListProps,
   StyleSheet,
@@ -153,7 +154,7 @@ export function ContentList<ItemT>({
                 },
               ]}
             >
-              <View
+              <Animated.View
                 style={[
                   styles.scrollIndicatorThumb,
                   {
