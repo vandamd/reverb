@@ -203,7 +203,7 @@ const ProgressIndicator = memo(function ProgressIndicator({
       animationRef.current = Animated.timing(progressAnimation, {
         toValue: 1,
         duration: remainingMs,
-        useNativeDriver: true,
+        useNativeDriver: false,
         easing: Easing.linear,
       });
       animationRef.current.start();
