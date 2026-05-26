@@ -10,6 +10,11 @@ const safely = (action: () => Promise<unknown>) => {
   });
 };
 
+const skipAndPlay = async (skip: () => Promise<unknown>) => {
+  await skip();
+  await TrackPlayer.play();
+};
+
 export const PlaybackService = () => {
   TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, (payload) => {
     publishPlaybackSnapshotEventPayload(
@@ -50,11 +55,11 @@ export const PlaybackService = () => {
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
-    safely(() => TrackPlayer.skipToNext());
+    safely(() => skipAndPlay(() => TrackPlayer.skipToNext()));
   });
 
   TrackPlayer.addEventListener(Event.RemotePrevious, () => {
-    safely(() => TrackPlayer.skipToPrevious());
+    safely(() => skipAndPlay(() => TrackPlayer.skipToPrevious()));
   });
 
   TrackPlayer.addEventListener(Event.RemoteSeek, ({ position }) => {
