@@ -1,5 +1,6 @@
 import TrackPlayer, { Event } from "react-native-track-player";
 import {
+  playbackSnapshotEvents,
   publishPlaybackSnapshot,
   publishPlaybackSnapshotEventPayload,
 } from "@/services/playbackSnapshotStore";
@@ -15,34 +16,16 @@ const skipAndPlay = async (skip: () => Promise<unknown>) => {
   await TrackPlayer.play();
 };
 
+const forwardSnapshotEvents = () => {
+  for (const event of playbackSnapshotEvents) {
+    TrackPlayer.addEventListener(event, (payload) => {
+      publishPlaybackSnapshotEventPayload(event, payload);
+    });
+  }
+};
+
 export const PlaybackService = () => {
-  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, (payload) => {
-    publishPlaybackSnapshotEventPayload(
-      Event.PlaybackActiveTrackChanged,
-      payload
-    );
-  });
-  TrackPlayer.addEventListener(Event.PlaybackError, (payload) => {
-    publishPlaybackSnapshotEventPayload(Event.PlaybackError, payload);
-  });
-  TrackPlayer.addEventListener(
-    Event.PlaybackPlayWhenReadyChanged,
-    (payload) => {
-      publishPlaybackSnapshotEventPayload(
-        Event.PlaybackPlayWhenReadyChanged,
-        payload
-      );
-    }
-  );
-  TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, (payload) => {
-    publishPlaybackSnapshotEventPayload(Event.PlaybackProgressUpdated, payload);
-  });
-  TrackPlayer.addEventListener(Event.PlaybackQueueEnded, (payload) => {
-    publishPlaybackSnapshotEventPayload(Event.PlaybackQueueEnded, payload);
-  });
-  TrackPlayer.addEventListener(Event.PlaybackState, (payload) => {
-    publishPlaybackSnapshotEventPayload(Event.PlaybackState, payload);
-  });
+  forwardSnapshotEvents();
 
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
     publishPlaybackSnapshot({ playWhenReady: true });

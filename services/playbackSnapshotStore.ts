@@ -548,11 +548,9 @@ export const publishPlaybackSnapshotEvent = (event: PlaybackSnapshotEvent) => {
   }
 };
 
-export const publishPlaybackSnapshotEventPayload = <
-  T extends PlaybackSnapshotEventType,
->(
-  type: T,
-  payload: EventPayloadByEvent[T]
+export const publishPlaybackSnapshotEventPayload = (
+  type: PlaybackSnapshotEventType,
+  payload: EventPayloadByEvent[PlaybackSnapshotEventType]
 ) => {
   publishPlaybackSnapshotEvent({
     ...payload,
