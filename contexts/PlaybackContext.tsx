@@ -13,6 +13,7 @@ import { AppState } from "react-native";
 import TrackPlayer, {
   AppKilledPlaybackBehavior,
   Capability,
+  type NowPlayingSnapshot,
   State,
   type Track,
   RepeatMode as TrackPlayerRepeatMode,
@@ -27,6 +28,7 @@ import {
   playbackSnapshotEvents,
   publishPlaybackSnapshot,
   publishPlaybackSnapshotEvent,
+  publishProjectedPlaybackSnapshot,
   setPlaybackSnapshotActiveTrackEventsSuppressed,
   subscribePlaybackSnapshot,
   trackPlayerPlayingStates,
@@ -431,10 +433,7 @@ const getRepairSnapshotPatch = (snapshot: {
   currentSnapshot: PlaybackSnapshot;
   nativePlaybackState: State;
   nativePlayWhenReady: boolean;
-  nativeProgress: {
-    duration: number;
-    position: number;
-  };
+  nativeProgress: Pick<NowPlayingSnapshot, "duration" | "position">;
   target: PlaybackRepairTarget;
 }): Partial<PlaybackSnapshot> => {
   const activeTrack =
@@ -512,36 +511,27 @@ function usePlaybackProviderValues() {
     getSnapshotPlaybackValues(snapshot);
 
   const repairPlaybackSnapshotFromNative = useCallback(async () => {
+    publishProjectedPlaybackSnapshot(Date.now());
+
     try {
       await ensureTrackPlayerReady();
 
-      const [
-        nativeActiveTrack,
-        nativeActiveIndex,
-        nativeProgress,
-        nativePlaybackState,
-        nativePlayWhenReady,
-      ] = await Promise.all([
-        TrackPlayer.getActiveTrack(),
-        TrackPlayer.getActiveTrackIndex(),
-        TrackPlayer.getProgress(),
-        TrackPlayer.getPlaybackState(),
-        TrackPlayer.getPlayWhenReady(),
-      ]);
-
+      const nativeSnapshot = await TrackPlayer.getNowPlayingSnapshot();
+      const receivedAtMs = Date.now();
       const currentSnapshot = getPlaybackSnapshot();
-      const nativeActiveTrackId = getTrackId(nativeActiveTrack);
+      const nativeActiveTrackId =
+        nativeSnapshot.activeTrackId ?? getTrackId(nativeSnapshot.activeTrack);
       let target = getLocalRepairTarget(
         currentSnapshot,
         nativeActiveTrackId,
-        nativeActiveIndex
+        nativeSnapshot.activeIndex
       );
 
       if (
         shouldFetchNativeQueueForRepair(
           target,
           nativeActiveTrackId,
-          nativeActiveIndex
+          nativeSnapshot.activeIndex
         )
       ) {
         const nativeQueue = await TrackPlayer.getQueue();
@@ -550,19 +540,20 @@ function usePlaybackProviderValues() {
             currentSnapshot,
             nativeQueue,
             nativeActiveTrackId,
-            nativeActiveIndex
+            nativeSnapshot.activeIndex
           ) ?? target;
       }
 
-      publishPlaybackSnapshot(
-        getRepairSnapshotPatch({
+      publishPlaybackSnapshot({
+        ...getRepairSnapshotPatch({
           currentSnapshot,
-          nativePlaybackState: nativePlaybackState.state,
-          nativePlayWhenReady,
-          nativeProgress,
+          nativePlaybackState: nativeSnapshot.playbackState.state,
+          nativePlayWhenReady: nativeSnapshot.playWhenReady,
+          nativeProgress: nativeSnapshot,
           target,
-        })
-      );
+        }),
+        updatedAtMs: receivedAtMs,
+      });
     } catch (syncError) {
       if (isPlayerNotReadyError(syncError)) {
         playerSetupPromise = null;

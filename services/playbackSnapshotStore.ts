@@ -33,6 +33,7 @@ export interface PlaybackSnapshot {
   repeatMode: RepeatMode;
   shuffle: boolean;
   sourceQueue: LocalTrack[];
+  updatedAtMs: number;
 }
 
 type PlaybackSnapshotPatch = Partial<PlaybackSnapshot>;
@@ -54,6 +55,7 @@ const initialPlaybackSnapshot: PlaybackSnapshot = {
   repeatMode: "off",
   shuffle: false,
   sourceQueue: [],
+  updatedAtMs: Date.now(),
 };
 
 export const trackPlayerPlayingStates = new Set<State>([
@@ -106,6 +108,132 @@ export const getPlaybackSnapshotActiveTrack = (snapshot = playbackSnapshot) => {
   return activeIndex >= 0 ? (snapshot.queue[activeIndex] ?? null) : null;
 };
 
+const getProjectionDurations = (
+  snapshot: PlaybackSnapshot,
+  activeIndex: number
+) =>
+  snapshot.queue.map((track, index) =>
+    Math.max(
+      0,
+      index === activeIndex
+        ? snapshot.durationMs || track.durationMs
+        : track.durationMs
+    )
+  );
+
+const getProjectedOffset = (durationsMs: number[], activeIndex: number) =>
+  durationsMs
+    .slice(0, activeIndex)
+    .reduce((totalMs, durationMs) => totalMs + durationMs, 0);
+
+const getProjectedTrackFromOffset = (
+  snapshot: PlaybackSnapshot,
+  durationsMs: number[],
+  offsetMs: number
+) => {
+  let elapsedMs = Math.max(0, offsetMs);
+
+  for (let index = 0; index < snapshot.queue.length; index += 1) {
+    const durationMs = durationsMs[index] ?? 0;
+    const isLastTrack = index === snapshot.queue.length - 1;
+
+    if (elapsedMs < durationMs || isLastTrack) {
+      const track = snapshot.queue[index];
+      return {
+        activeIndex: index,
+        activeTrackId: track?.id ?? null,
+        durationMs,
+        progressMs: durationMs > 0 ? Math.min(elapsedMs, durationMs) : 0,
+      };
+    }
+
+    elapsedMs -= durationMs;
+  }
+
+  return null;
+};
+
+export const projectPlaybackSnapshot = (
+  snapshot: PlaybackSnapshot,
+  nowMs: number
+): PlaybackSnapshot => {
+  const elapsedMs = nowMs - snapshot.updatedAtMs;
+  const activeIndex = getPlaybackSnapshotTrackIndex(snapshot);
+  const activeTrack = snapshot.queue[activeIndex];
+
+  if (
+    elapsedMs <= 0 ||
+    snapshot.playWhenReady !== true ||
+    snapshot.playbackState === undefined ||
+    !trackPlayerPlayingStates.has(snapshot.playbackState) ||
+    !activeTrack
+  ) {
+    return { ...snapshot, updatedAtMs: nowMs };
+  }
+
+  const currentDurationMs = Math.max(
+    0,
+    snapshot.durationMs || activeTrack.durationMs
+  );
+  const nextProgressMs = Math.max(0, snapshot.progressMs + elapsedMs);
+
+  if (snapshot.repeatMode === "track") {
+    return {
+      ...snapshot,
+      activeIndex,
+      activeTrackId: activeTrack.id,
+      durationMs: currentDurationMs,
+      progressMs:
+        currentDurationMs > 0
+          ? nextProgressMs % currentDurationMs
+          : nextProgressMs,
+      updatedAtMs: nowMs,
+    };
+  }
+
+  const durationsMs = getProjectionDurations(snapshot, activeIndex);
+  const totalDurationMs = durationsMs.reduce(
+    (totalMs, durationMs) => totalMs + durationMs,
+    0
+  );
+
+  if (totalDurationMs <= 0) {
+    return {
+      ...snapshot,
+      activeIndex,
+      activeTrackId: activeTrack.id,
+      progressMs: nextProgressMs,
+      updatedAtMs: nowMs,
+    };
+  }
+
+  const queueOffsetMs =
+    getProjectedOffset(durationsMs, activeIndex) + nextProgressMs;
+  const projectedTrack =
+    snapshot.repeatMode === "queue"
+      ? getProjectedTrackFromOffset(
+          snapshot,
+          durationsMs,
+          queueOffsetMs % totalDurationMs
+        )
+      : getProjectedTrackFromOffset(snapshot, durationsMs, queueOffsetMs);
+
+  if (!projectedTrack) {
+    return { ...snapshot, updatedAtMs: nowMs };
+  }
+
+  const reachedQueueEnd =
+    snapshot.repeatMode !== "queue" && queueOffsetMs >= totalDurationMs;
+
+  return {
+    ...snapshot,
+    ...projectedTrack,
+    playbackState: reachedQueueEnd ? State.Ended : snapshot.playbackState,
+    playWhenReady: reachedQueueEnd ? false : snapshot.playWhenReady,
+    updatedAtMs: nowMs,
+  };
+};
+
 const hasSnapshotChanged = (nextSnapshot: PlaybackSnapshot) =>
   Object.keys(nextSnapshot).some((key) => {
     const snapshotKey = key as keyof PlaybackSnapshot;
@@ -132,12 +260,16 @@ export const subscribePlaybackSnapshot = (
 export const publishPlaybackSnapshot = (update: PlaybackSnapshotUpdate) => {
   const patch =
     typeof update === "function" ? update(playbackSnapshot) : update;
-  const nextSnapshot = { ...playbackSnapshot, ...patch };
+  const timestampedPatch =
+    patch.updatedAtMs === undefined
+      ? { ...patch, updatedAtMs: Date.now() }
+      : patch;
+  const nextSnapshot = { ...playbackSnapshot, ...timestampedPatch };
 
   if (
-    patch.queue &&
-    patch.queue !== playbackSnapshot.queue &&
-    patch.queueRevision === undefined
+    timestampedPatch.queue &&
+    timestampedPatch.queue !== playbackSnapshot.queue &&
+    timestampedPatch.queueRevision === undefined
   ) {
     nextSnapshot.queueRevision = playbackSnapshot.queueRevision + 1;
   }
@@ -150,6 +282,11 @@ export const publishPlaybackSnapshot = (update: PlaybackSnapshotUpdate) => {
   emitPlaybackSnapshotChange();
   return playbackSnapshot;
 };
+
+export const publishProjectedPlaybackSnapshot = (nowMs = Date.now()) =>
+  publishPlaybackSnapshot((snapshot) =>
+    projectPlaybackSnapshot(snapshot, nowMs)
+  );
 
 export const setPlaybackSnapshotActiveTrackEventsSuppressed = (
   suppressed: boolean

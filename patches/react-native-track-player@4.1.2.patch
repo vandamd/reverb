@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..f1d13ec832f0edbbc9ecc595229ede080d2f1657 100644
+index b2409a0..e0c9f42 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 @@ -251,7 +251,8 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
@@ -350,7 +350,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..f1d13ec832f0edbbc9ecc595229ede08
          if (verifyServiceBoundOrReject(callback)) return@launch
  
          try {
-@@ -570,49 +628,59 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -570,49 +628,91 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
              rejectWithException(callback, exception)
          }
      }
@@ -384,6 +384,38 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..f1d13ec832f0edbbc9ecc595229ede08
  
      @ReactMethod
 -    fun getDuration(callback: Promise) = scope.launch {
++    fun getNowPlayingSnapshot(callback: Promise) {
++        scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++
++        val snapshot = Arguments.createMap()
++        val activeIndex =
++            if (musicService.tracks.isEmpty()) null else musicService.getCurrentTrackIndex()
++
++        if (activeIndex == null) {
++            snapshot.putNull("activeIndex")
++            snapshot.putNull("activeTrackId")
++            snapshot.putNull("activeTrack")
++        } else {
++            val activeTrack = musicService.tracks[activeIndex]
++            val activeTrackBundle = activeTrack.originalItem
++            snapshot.putInt("activeIndex", activeIndex)
++            snapshot.putString("activeTrackId", activeTrackBundle?.getString("id"))
++            snapshot.putMap("activeTrack", activeTrackBundle?.let(Arguments::fromBundle))
++        }
++
++        snapshot.putDouble("position", musicService.getPositionInSeconds())
++        snapshot.putDouble("duration", musicService.getDurationInSeconds())
++        snapshot.putDouble("buffered", musicService.getBufferedPositionInSeconds())
++        snapshot.putMap("playbackState", Arguments.fromBundle(musicService.getPlayerStateBundle(musicService.state)))
++        snapshot.putBoolean("playWhenReady", musicService.playWhenReady)
++        snapshot.putInt("queueLength", musicService.tracks.size)
++
++        callback.resolve(snapshot)
++    }
++    }
++
++    @ReactMethod
 +    fun getDuration(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
@@ -419,7 +451,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..f1d13ec832f0edbbc9ecc595229ede08
          if (verifyServiceBoundOrReject(callback)) return@launch
          var bundle = Bundle()
          bundle.putDouble("duration", musicService.getDurationInSeconds());
-@@ -620,10 +688,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -620,10 +720,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          bundle.putDouble("buffered", musicService.getBufferedPositionInSeconds());
          callback.resolve(Arguments.fromBundle(bundle))
      }
@@ -435,7 +467,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..f1d13ec832f0edbbc9ecc595229ede08
 +    }
  }
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index afa6b0f335714de0cc8741d5bbdd51b4e04bb3bb..c417e7b46c1286ccf4eecc0f0775676f297b66fe 100644
+index afa6b0f..c417e7b 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -741,7 +741,7 @@ class MusicService : HeadlessJsTaskService() {
@@ -456,3 +488,126 @@ index afa6b0f335714de0cc8741d5bbdd51b4e04bb3bb..c417e7b46c1286ccf4eecc0f0775676f
              ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
              ?.emit(event, payload)
      }
+diff --git a/lib/src/interfaces/Progress.d.ts b/lib/src/interfaces/Progress.d.ts
+index 77c0834..a650ddd 100644
+--- a/lib/src/interfaces/Progress.d.ts
++++ b/lib/src/interfaces/Progress.d.ts
+@@ -1,3 +1,5 @@
++import type { PlaybackState } from './PlaybackState';
++import type { Track } from './Track';
+ export interface Progress {
+     /**
+      * The playback position of the current track in seconds.
+@@ -13,3 +15,11 @@ export interface Progress {
+      **/
+     buffered: number;
+ }
++export interface NowPlayingSnapshot extends Progress {
++    activeIndex?: number;
++    activeTrack?: Track;
++    activeTrackId?: string;
++    playbackState: PlaybackState;
++    playWhenReady: boolean;
++    queueLength: number;
++}
+diff --git a/lib/src/trackPlayer.d.ts b/lib/src/trackPlayer.d.ts
+index 8a6d0a9..88a6b13 100644
+--- a/lib/src/trackPlayer.d.ts
++++ b/lib/src/trackPlayer.d.ts
+@@ -1,5 +1,5 @@
+ import { Event, RepeatMode, State } from './constants';
+-import type { AddTrack, EventPayloadByEvent, NowPlayingMetadata, PlaybackState, PlayerOptions, Progress, ServiceHandler, Track, TrackMetadataBase, UpdateOptions } from './interfaces';
++import type { AddTrack, EventPayloadByEvent, NowPlayingMetadata, NowPlayingSnapshot, PlaybackState, PlayerOptions, Progress, ServiceHandler, Track, TrackMetadataBase, UpdateOptions } from './interfaces';
+ /**
+  * Initializes the player with the specified options.
+  *
+@@ -215,6 +215,10 @@ export declare function getActiveTrackIndex(): Promise<number | undefined>;
+  * Gets the active track or undefined if there is no current track.
+  */
+ export declare function getActiveTrack(): Promise<Track | undefined>;
++/**
++ * Gets the native player snapshot used to synchronise now playing UI.
++ */
++export declare function getNowPlayingSnapshot(): Promise<NowPlayingSnapshot>;
+ /**
+  * Gets the index of the current track or null if there is no current track.
+  *
+diff --git a/lib/src/trackPlayer.js b/lib/src/trackPlayer.js
+index 191e5de..0d582aa 100644
+--- a/lib/src/trackPlayer.js
++++ b/lib/src/trackPlayer.js
+@@ -308,6 +308,18 @@ export async function getActiveTrackIndex() {
+ export async function getActiveTrack() {
+     return (await TrackPlayer.getActiveTrack()) ?? undefined;
+ }
++/**
++ * Gets the native player snapshot used to synchronise now playing UI.
++ */
++export async function getNowPlayingSnapshot() {
++    const snapshot = await TrackPlayer.getNowPlayingSnapshot();
++    return {
++        ...snapshot,
++        activeIndex: snapshot.activeIndex ?? undefined,
++        activeTrack: snapshot.activeTrack ?? undefined,
++        activeTrackId: snapshot.activeTrackId ?? undefined,
++    };
++}
+ /**
+  * Gets the index of the current track or null if there is no current track.
+  *
+diff --git a/src/interfaces/Progress.ts b/src/interfaces/Progress.ts
+index e7a018b..edc1883 100644
+--- a/src/interfaces/Progress.ts
++++ b/src/interfaces/Progress.ts
+@@ -1,3 +1,6 @@
++import type { PlaybackState } from './PlaybackState';
++import type { Track } from './Track';
++
+ export interface Progress {
+   /**
+    * The playback position of the current track in seconds.
+@@ -13,3 +16,12 @@ export interface Progress {
+    **/
+   buffered: number;
+ }
++
++export interface NowPlayingSnapshot extends Progress {
++  activeIndex?: number;
++  activeTrack?: Track;
++  activeTrackId?: string;
++  playbackState: PlaybackState;
++  playWhenReady: boolean;
++  queueLength: number;
++}
+diff --git a/src/trackPlayer.ts b/src/trackPlayer.ts
+index 6f6d723..fa283d3 100644
+--- a/src/trackPlayer.ts
++++ b/src/trackPlayer.ts
+@@ -11,6 +11,7 @@ import type {
+   AddTrack,
+   EventPayloadByEvent,
+   NowPlayingMetadata,
++  NowPlayingSnapshot,
+   PlaybackState,
+   PlayerOptions,
+   Progress,
+@@ -436,6 +437,19 @@ export async function getActiveTrack(): Promise<Track | undefined> {
+   return (await TrackPlayer.getActiveTrack()) ?? undefined;
+ }
+
++/**
++ * Gets the native player snapshot used to synchronise now playing UI.
++ */
++export async function getNowPlayingSnapshot(): Promise<NowPlayingSnapshot> {
++  const snapshot = await TrackPlayer.getNowPlayingSnapshot();
++  return {
++    ...snapshot,
++    activeIndex: snapshot.activeIndex ?? undefined,
++    activeTrack: snapshot.activeTrack ?? undefined,
++    activeTrackId: snapshot.activeTrackId ?? undefined,
++  };
++}
++
+ /**
+  * Gets the index of the current track or null if there is no current track.
+  *
