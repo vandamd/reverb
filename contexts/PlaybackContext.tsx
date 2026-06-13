@@ -20,10 +20,12 @@ import TrackPlayer, {
   useTrackPlayerEvents,
 } from "react-native-track-player";
 import {
+  flushPlaybackSnapshot,
   getPlaybackSnapshot,
   getPlaybackSnapshotActiveTrack,
   getPlaybackSnapshotTrackIndex,
   getTrackId,
+  hydratePlaybackSnapshot,
   type PlaybackSnapshot,
   playbackSnapshotEvents,
   publishPlaybackSnapshot,
@@ -510,9 +512,11 @@ function usePlaybackProviderValues() {
   const { currentTrack, durationMs, index, isPlaying, progressMs } =
     getSnapshotPlaybackValues(snapshot);
 
-  const repairPlaybackSnapshotFromNative = useCallback(async () => {
+  const projectPlaybackSnapshotNow = useCallback(() => {
     publishProjectedPlaybackSnapshot(Date.now());
+  }, []);
 
+  const reconcilePlaybackSnapshotFromNative = useCallback(async () => {
     try {
       await ensureTrackPlayerReady();
 
@@ -561,6 +565,11 @@ function usePlaybackProviderValues() {
       publishPlaybackError(syncError);
     }
   }, []);
+
+  const repairPlaybackSnapshotFromNative = useCallback(async () => {
+    projectPlaybackSnapshotNow();
+    await reconcilePlaybackSnapshotFromNative();
+  }, [projectPlaybackSnapshotNow, reconcilePlaybackSnapshotFromNative]);
 
   const runWithPlayWhenReady = useCallback(
     async (nextPlayWhenReady: boolean, action: () => Promise<void>) => {
@@ -697,20 +706,44 @@ function usePlaybackProviderValues() {
   );
 
   useEffect(() => {
+    let isMounted = true;
+    const projectThenReconcile = () => {
+      projectPlaybackSnapshotNow();
+      reconcilePlaybackSnapshotFromNative().catch(publishPlaybackError);
+    };
+    const projectThenFlush = () => {
+      projectPlaybackSnapshotNow();
+      flushPlaybackSnapshot().catch(publishPlaybackError);
+    };
+
+    hydratePlaybackSnapshot()
+      .then(() => {
+        if (isMounted && AppState.currentState === "active") {
+          projectThenReconcile();
+        }
+      })
+      .catch(publishPlaybackError);
+
     if (AppState.currentState === "active") {
-      repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
+      projectThenReconcile();
     }
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
+        projectThenReconcile();
+        return;
+      }
+
+      if (nextState === "inactive" || nextState === "background") {
+        projectThenFlush();
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.remove();
     };
-  }, [repairPlaybackSnapshotFromNative]);
+  }, [projectPlaybackSnapshotNow, reconcilePlaybackSnapshotFromNative]);
 
   useEffect(() => {
     const activeIndex = snapshot.activeTrackId

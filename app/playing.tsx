@@ -2,7 +2,6 @@ import { type Href, router } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type StyleProp,
@@ -159,71 +158,50 @@ const ProgressIndicator = memo(function ProgressIndicator({
   const { durationMs, progressMs } = usePlaybackProgress();
   const { isPlaying } = usePlaybackStatus();
   const { seekToPosition } = usePlaybackControls();
-  const [displayProgressMs, setDisplayProgressMs] = useState(progressMs);
-  const progressAnimation = useRef(new Animated.Value(0)).current;
   const progressBarRef = useRef<View>(null);
-  const textIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
-  const startTimeRef = useRef(0);
-  const startProgressRef = useRef(0);
   const activeDurationMs = durationMs || fallbackDurationMs;
+  const clampedPlaybackProgressMs = Math.min(progressMs, activeDurationMs);
+  const [displayProgress, setDisplayProgress] = useState(() => ({
+    progressMs: clampedPlaybackProgressMs,
+    sourceDurationMs: activeDurationMs,
+    sourceProgressMs: progressMs,
+  }));
+  const displayProgressMs =
+    displayProgress.sourceProgressMs === progressMs &&
+    displayProgress.sourceDurationMs === activeDurationMs
+      ? displayProgress.progressMs
+      : clampedPlaybackProgressMs;
+  const progressRatio =
+    activeDurationMs > 0
+      ? Math.min(displayProgressMs / activeDurationMs, 1)
+      : 0;
 
   useEffect(() => {
-    const clampedMs = Math.min(progressMs, activeDurationMs);
-    setDisplayProgressMs(clampedMs);
-    const ratio =
-      activeDurationMs > 0 ? Math.min(progressMs / activeDurationMs, 1) : 0;
-    animationRef.current?.stop();
-    progressAnimation.setValue(ratio);
-    startProgressRef.current = clampedMs;
-    startTimeRef.current = Date.now();
-  }, [activeDurationMs, progressAnimation, progressMs]);
-
-  useEffect(() => {
-    animationRef.current?.stop();
+    const startedAtMs = Date.now();
+    const startProgressMs = clampedPlaybackProgressMs;
+    setDisplayProgress({
+      progressMs: startProgressMs,
+      sourceDurationMs: activeDurationMs,
+      sourceProgressMs: progressMs,
+    });
 
     if (!isPlaying || activeDurationMs <= 0) {
-      if (textIntervalRef.current !== null) {
-        clearInterval(textIntervalRef.current);
-        textIntervalRef.current = null;
-      }
       return;
     }
 
-    startTimeRef.current = Date.now();
-    startProgressRef.current = Math.min(progressMs, activeDurationMs);
-
-    const clampedMs = Math.min(progressMs, activeDurationMs);
-    const remainingMs = activeDurationMs - clampedMs;
-    const ratio = activeDurationMs > 0 ? clampedMs / activeDurationMs : 0;
-
-    progressAnimation.setValue(ratio);
-
-    if (remainingMs > 0) {
-      animationRef.current = Animated.timing(progressAnimation, {
-        toValue: 1,
-        duration: remainingMs,
-        useNativeDriver: false,
-        easing: Easing.linear,
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startedAtMs;
+      setDisplayProgress({
+        progressMs: Math.min(startProgressMs + elapsed, activeDurationMs),
+        sourceDurationMs: activeDurationMs,
+        sourceProgressMs: progressMs,
       });
-      animationRef.current.start();
-    }
-
-    textIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTimeRef.current;
-      setDisplayProgressMs(
-        Math.min(startProgressRef.current + elapsed, activeDurationMs)
-      );
     }, 1000);
 
     return () => {
-      animationRef.current?.stop();
-      if (textIntervalRef.current !== null) {
-        clearInterval(textIntervalRef.current);
-        textIntervalRef.current = null;
-      }
+      clearInterval(interval);
     };
-  }, [activeDurationMs, isPlaying, progressAnimation, progressMs]);
+  }, [activeDurationMs, clampedPlaybackProgressMs, isPlaying, progressMs]);
 
   const handleProgressBarSeek = (event: GestureResponderEvent) => {
     if (!(activeDurationMs > 0 && progressBarRef.current)) {
@@ -252,12 +230,12 @@ const ProgressIndicator = memo(function ProgressIndicator({
           ref={progressBarRef}
           style={[styles.progressBarBackground, { backgroundColor: colour }]}
         >
-          <Animated.View
+          <View
             style={[
               styles.progressBarForeground,
               {
                 backgroundColor: colour,
-                transform: [{ scaleX: progressAnimation }],
+                transform: [{ scaleX: progressRatio }],
                 transformOrigin: "left center",
               },
             ]}
@@ -560,7 +538,7 @@ export default function PlayingScreen() {
         <View style={styles.mainContent}>
           <TrackArtwork
             recycleOnUriChange={false}
-            size={200}
+            size={n(200)}
             style={styles.albumArt}
             uri={displayTrack.artworkUri}
           />

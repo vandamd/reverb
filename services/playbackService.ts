@@ -5,6 +5,8 @@ import {
   publishPlaybackSnapshotEventPayload,
 } from "@/services/playbackSnapshotStore";
 
+let hasRegisteredPlaybackServiceListeners = false;
+
 const safely = (action: () => Promise<unknown>) => {
   action().catch(() => {
     // Remote controls should never crash the playback service.
@@ -25,6 +27,11 @@ const forwardSnapshotEvents = () => {
 };
 
 export const PlaybackService = () => {
+  if (hasRegisteredPlaybackServiceListeners) {
+    return Promise.resolve();
+  }
+
+  hasRegisteredPlaybackServiceListeners = true;
   forwardSnapshotEvents();
 
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
