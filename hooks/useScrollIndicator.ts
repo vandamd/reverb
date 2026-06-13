@@ -1,19 +1,22 @@
-import { useCallback, useRef, useState } from "react";
-import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import { useCallback, useState } from "react";
 import {
   type AnimatedStyle,
+  type ScrollHandlerProcessed,
   type SharedValue,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
 } from "react-native-reanimated";
 import { n } from "@/utils/scaling";
 
 interface UseScrollIndicatorReturn {
   contentHeight: number;
-  handleScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  handleScroll: ScrollHandlerProcessed;
   scrollIndicatorHeight: number;
   scrollIndicatorPosition: SharedValue<number>;
   scrollIndicatorStyle: AnimatedStyle<{
+    height: number;
     transform: { translateY: number }[];
   }>;
   scrollViewHeight: number;
@@ -21,48 +24,83 @@ interface UseScrollIndicatorReturn {
   setScrollViewHeight: (height: number) => void;
 }
 
+const MIN_THUMB_HEIGHT = n(20);
+
 export function useScrollIndicator(): UseScrollIndicatorReturn {
   const [contentHeight, setContentHeight] = useState<number>(0);
   const [scrollViewHeight, setScrollViewHeight] = useState<number>(0);
-  const scrollY = useRef(0);
+  const contentHeightValue = useSharedValue(0);
+  const scrollViewHeightValue = useSharedValue(0);
+  const scrollY = useSharedValue(0);
   const scrollIndicatorPosition = useSharedValue(0);
 
   const scrollIndicatorHeight =
     scrollViewHeight > 0 &&
     contentHeight > 0 &&
     contentHeight > scrollViewHeight
-      ? Math.max((scrollViewHeight * scrollViewHeight) / contentHeight, n(20))
+      ? Math.max(
+          (scrollViewHeight * scrollViewHeight) / contentHeight,
+          MIN_THUMB_HEIGHT
+        )
       : 0;
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      scrollY.current = event.nativeEvent.contentOffset.y;
+  const scrollIndicatorHeightValue = useDerivedValue(() => {
+    const viewportHeight = scrollViewHeightValue.value;
+    const totalHeight = contentHeightValue.value;
 
-      const position =
-        contentHeight > scrollViewHeight && scrollIndicatorHeight > 0
-          ? Math.max(
-              0,
-              Math.min(
-                (scrollY.current / (contentHeight - scrollViewHeight)) *
-                  (scrollViewHeight - scrollIndicatorHeight),
-                scrollViewHeight - scrollIndicatorHeight
-              )
-            )
-          : 0;
+    return viewportHeight > 0 && totalHeight > viewportHeight
+      ? Math.max(
+          (viewportHeight * viewportHeight) / totalHeight,
+          MIN_THUMB_HEIGHT
+        )
+      : 0;
+  });
 
-      scrollIndicatorPosition.value = position;
+  const handleScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+
+  const scrollIndicatorStyle = useAnimatedStyle(() => {
+    const totalHeight = contentHeightValue.value;
+    const viewportHeight = scrollViewHeightValue.value;
+    const thumbHeight = scrollIndicatorHeightValue.value;
+
+    if (totalHeight <= viewportHeight || thumbHeight <= 0) {
+      scrollIndicatorPosition.value = 0;
+      return {
+        height: thumbHeight,
+        transform: [{ translateY: 0 }],
+      };
+    }
+
+    const maxScrollY = totalHeight - viewportHeight;
+    const maxThumbY = viewportHeight - thumbHeight;
+    const nextPosition = Math.max(
+      0,
+      Math.min((scrollY.value / maxScrollY) * maxThumbY, maxThumbY)
+    );
+    scrollIndicatorPosition.value = nextPosition;
+    return {
+      height: thumbHeight,
+      transform: [{ translateY: nextPosition }],
+    };
+  });
+
+  const setContentHeightValue = useCallback(
+    (height: number) => {
+      setContentHeight(height);
+      contentHeightValue.value = height;
     },
-    [
-      contentHeight,
-      scrollIndicatorHeight,
-      scrollIndicatorPosition,
-      scrollViewHeight,
-    ]
+    [contentHeightValue]
   );
 
-  const scrollIndicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: scrollIndicatorPosition.value }],
-  }));
+  const setScrollViewHeightValue = useCallback(
+    (height: number) => {
+      setScrollViewHeight(height);
+      scrollViewHeightValue.value = height;
+    },
+    [scrollViewHeightValue]
+  );
 
   return {
     contentHeight,
@@ -71,7 +109,7 @@ export function useScrollIndicator(): UseScrollIndicatorReturn {
     scrollIndicatorPosition,
     scrollIndicatorStyle,
     scrollViewHeight,
-    setContentHeight,
-    setScrollViewHeight,
+    setContentHeight: setContentHeightValue,
+    setScrollViewHeight: setScrollViewHeightValue,
   };
 }

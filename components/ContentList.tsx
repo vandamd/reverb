@@ -1,7 +1,6 @@
 import { router, useSegments } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import {
-  FlatList,
   type FlatListProps,
   StyleSheet,
   View,
@@ -26,6 +25,7 @@ interface ContentListProps<ItemT>
     FlatListProps<ItemT>,
     | "contentContainerStyle"
     | "data"
+    | "CellRendererComponent"
     | "ItemSeparatorComponent"
     | "ListHeaderComponent"
   > {
@@ -112,7 +112,7 @@ export function ContentList<ItemT>({
             { paddingBottom: n(footer ? 0 : resolvedBottomPadding) },
           ]}
         >
-          <FlatList
+          <Animated.FlatList
             contentContainerStyle={[
               styles.content,
               padding,

@@ -1,12 +1,6 @@
 import { router, useSegments } from "expo-router";
 import type { ReactNode } from "react";
-import {
-  ScrollView,
-  type StyleProp,
-  StyleSheet,
-  View,
-  type ViewStyle,
-} from "react-native";
+import { type StyleProp, StyleSheet, View, type ViewStyle } from "react-native";
 import Animated from "react-native-reanimated";
 import { Header } from "@/components/Header";
 import type { MaterialIconName } from "@/components/MaterialIcon";
@@ -127,7 +121,7 @@ export default function ContentContainer({
             ]}
           >
             {scrollable ? (
-              <ScrollView
+              <Animated.ScrollView
                 onLayout={(event) =>
                   setScrollViewHeight(event.nativeEvent.layout.height)
                 }
@@ -151,7 +145,7 @@ export default function ContentContainer({
                 >
                   {children ?? null}
                 </View>
-              </ScrollView>
+              </Animated.ScrollView>
             ) : (
               <View
                 onLayout={(event) =>
