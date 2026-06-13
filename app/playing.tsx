@@ -1,7 +1,6 @@
 import { type Href, router } from "expo-router";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type StyleProp,
@@ -9,6 +8,15 @@ import {
   type TextStyle,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useDerivedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import ContentContainer from "@/components/ContentContainer";
 import { HapticPressable } from "@/components/HapticPressable";
 import { MaterialIcon } from "@/components/MaterialIcon";
@@ -31,40 +39,6 @@ import { formatDuration, getAlbumId } from "@/services/librarySelectors";
 import type { LocalTrack, RepeatMode } from "@/types/music";
 import { n } from "@/utils/scaling";
 
-const startMarqueeAnimation = ({
-  delay,
-  distance,
-  duration,
-  animatedValue,
-}: {
-  delay: number;
-  distance: number;
-  duration: number;
-  animatedValue: Animated.Value;
-}) => {
-  animatedValue.setValue(0);
-
-  const animation = Animated.loop(
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(animatedValue, {
-        toValue: -distance,
-        duration,
-        useNativeDriver: true,
-      }),
-      Animated.delay(500),
-      Animated.timing(animatedValue, {
-        toValue: 0,
-        duration: 0,
-        useNativeDriver: true,
-      }),
-    ])
-  );
-
-  animation.start();
-  return () => animation.stop();
-};
-
 function MarqueeText({
   children,
   delay = 1250,
@@ -80,7 +54,6 @@ function MarqueeText({
 }) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
-  const animatedValue = useRef(new Animated.Value(0)).current;
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     setContainerWidth(event.nativeEvent.layout.width);
@@ -93,28 +66,38 @@ function MarqueeText({
   const shouldScroll =
     isActive && textWidth > containerWidth + n(5) && containerWidth > 0;
 
-  useEffect(() => {
+  const translateX = useDerivedValue(() => {
     if (!shouldScroll) {
-      animatedValue.setValue(0);
-      return;
+      return 0;
     }
 
     const distance = textWidth - containerWidth + n(25);
-    return startMarqueeAnimation({
-      delay,
-      distance,
-      duration: children.length * msPerChar,
-      animatedValue,
-    });
+    return withRepeat(
+      withSequence(
+        withDelay(
+          delay,
+          withTiming(-distance, {
+            duration: children.length * msPerChar,
+            easing: Easing.linear,
+          })
+        ),
+        withDelay(500, withTiming(0, { duration: 0 }))
+      ),
+      -1,
+      false
+    );
   }, [
-    children,
+    children.length,
     containerWidth,
     delay,
     msPerChar,
     shouldScroll,
     textWidth,
-    animatedValue,
   ]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
 
   return (
     <View onLayout={handleContainerLayout} style={styles.marqueeContainer}>
@@ -125,12 +108,7 @@ function MarqueeText({
       </View>
 
       {shouldScroll ? (
-        <Animated.View
-          style={[
-            styles.marqueeScrollContainer,
-            { transform: [{ translateX: animatedValue }] },
-          ]}
-        >
+        <Animated.View style={[styles.marqueeScrollContainer, animatedStyle]}>
           <StyledText style={style}>{children}</StyledText>
         </Animated.View>
       ) : (
@@ -466,9 +444,11 @@ export default function PlayingScreen() {
     visibleTrack?.id,
     visibleTrack?.liked ?? false
   );
-  const displayTrack = visibleTrack
-    ? { ...visibleTrack, liked: isVisibleTrackLiked }
-    : null;
+  const displayTrack = useMemo(
+    () =>
+      visibleTrack ? { ...visibleTrack, liked: isVisibleTrackLiked } : null,
+    [isVisibleTrackLiked, visibleTrack]
+  );
 
   const handleTitlePress = useCallback(() => {
     if (!visibleTrack) {

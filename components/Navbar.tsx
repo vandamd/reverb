@@ -1,4 +1,3 @@
-import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { StyleSheet, View } from "react-native";
 import { MaterialIcon, type MaterialIconName } from "@/components/MaterialIcon";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
@@ -16,7 +15,9 @@ export interface TabConfigItem {
 
 interface NavbarProps {
   currentScreenName: string;
-  navigation: BottomTabBarProps["navigation"];
+  navigation: {
+    navigate: (screenName: string) => void;
+  };
   tabsConfig?: readonly TabConfigItem[];
 }
 

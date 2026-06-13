@@ -1,13 +1,13 @@
 import { router, useSegments } from "expo-router";
 import type { ReactNode } from "react";
 import {
-  Animated,
   ScrollView,
   type StyleProp,
   StyleSheet,
   View,
   type ViewStyle,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { Header } from "@/components/Header";
 import type { MaterialIconName } from "@/components/MaterialIcon";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
@@ -62,7 +62,7 @@ export default function ContentContainer({
   const {
     handleScroll,
     scrollIndicatorHeight,
-    scrollIndicatorPosition,
+    scrollIndicatorStyle,
     setContentHeight,
     setScrollViewHeight,
   } = useScrollIndicator();
@@ -187,12 +187,8 @@ export default function ContentContainer({
                     },
                     {
                       height: scrollIndicatorHeight,
-                      transform: [
-                        {
-                          translateY: scrollIndicatorPosition,
-                        },
-                      ],
                     },
+                    scrollIndicatorStyle,
                   ]}
                 />
               </View>

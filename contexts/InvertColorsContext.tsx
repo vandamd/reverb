@@ -1,5 +1,5 @@
 import { setBackgroundColorAsync } from "expo-system-ui";
-import { createContext, type ReactNode, useContext, useEffect } from "react";
+import { createContext, type ReactNode, use, useEffect, useMemo } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
 
 interface InvertColorsContextType {
@@ -14,7 +14,7 @@ const InvertColorsContext = createContext<InvertColorsContextType>({
   },
 });
 
-export const useInvertColors = () => useContext(InvertColorsContext);
+export const useInvertColors = () => use(InvertColorsContext);
 
 export const InvertColorsProvider = ({ children }: { children: ReactNode }) => {
   const [invertColors, setInvertColors] = usePersistedState(
@@ -28,8 +28,13 @@ export const InvertColorsProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [invertColors]);
 
+  const value = useMemo(
+    () => ({ invertColors, setInvertColors }),
+    [invertColors, setInvertColors]
+  );
+
   return (
-    <InvertColorsContext.Provider value={{ invertColors, setInvertColors }}>
+    <InvertColorsContext.Provider value={value}>
       {children}
     </InvertColorsContext.Provider>
   );

@@ -33,9 +33,7 @@ interface PlaylistRow {
 
 let databasePromise: Promise<SQLiteDatabase> | null = null;
 
-const openDatabase = async () => {
-  databasePromise ??= openDatabaseAsync("reverb.db");
-  const database = await databasePromise;
+const prepareDatabase = async (database: SQLiteDatabase) => {
   await database.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS tracks (
@@ -74,16 +72,24 @@ const openDatabase = async () => {
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
     );
   `);
-  await ensureColumn(database, "playlists", "cover_uri", "TEXT");
-  await ensureColumn(database, "tracks", "artwork_cache_key", "TEXT");
-  await database.execAsync(`
-    CREATE INDEX IF NOT EXISTS tracks_album_sort_idx
-      ON tracks (album_artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE);
-    CREATE INDEX IF NOT EXISTS tracks_liked_idx ON tracks (liked);
-    CREATE INDEX IF NOT EXISTS playlist_tracks_order_idx
-      ON playlist_tracks (playlist_id, position);
-    CREATE INDEX IF NOT EXISTS playlist_tracks_track_idx ON playlist_tracks (track_id);
-  `);
+  await Promise.all([
+    ensureColumn(database, "playlists", "cover_uri", "TEXT"),
+    ensureColumn(database, "tracks", "artwork_cache_key", "TEXT"),
+    database.execAsync(`
+      CREATE INDEX IF NOT EXISTS tracks_album_sort_idx
+        ON tracks (album_artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS tracks_liked_idx ON tracks (liked);
+      CREATE INDEX IF NOT EXISTS playlist_tracks_order_idx
+        ON playlist_tracks (playlist_id, position);
+      CREATE INDEX IF NOT EXISTS playlist_tracks_track_idx ON playlist_tracks (track_id);
+    `),
+  ]);
+};
+
+const openDatabase = async () => {
+  databasePromise ??= openDatabaseAsync("reverb.db");
+  const database = await databasePromise;
+  await prepareDatabase(database);
   return database;
 };
 
@@ -189,78 +195,89 @@ export const replaceScannedTracks = async (
       const columnCount = 18;
       const singleRowPlaceholder = `(${Array.from({ length: columnCount }, () => "?").join(", ")})`;
 
+      const batches: ScannedTrack[][] = [];
       for (let i = 0; i < changedTracks.length; i += BATCH_SIZE) {
-        const batch = changedTracks.slice(i, i + BATCH_SIZE);
-        const valuesPlaceholders = batch
-          .map(() => singleRowPlaceholder)
-          .join(", ");
-        const params = batch.flatMap((track) => [
-          track.id,
-          track.contentUri,
-          track.fileName,
-          track.relativePath,
-          track.title,
-          track.artist,
-          track.album,
-          track.albumArtist,
-          track.durationMs,
-          track.trackNumber,
-          track.discNumber,
-          track.year,
-          track.mimeType,
-          track.sizeBytes,
-          track.modifiedAtMs,
-          track.artworkCacheKey ?? null,
-          track.artworkUri ?? null,
-          existingById.get(track.id)?.liked ?? 0,
-        ]);
-
-        await transaction.runAsync(
-          `
-          INSERT INTO tracks (
-            id, uri, file_name, folder_path, title, artist, album, album_artist,
-            duration_ms, track_number, disc_number, year, mime_type, size_bytes,
-            modified_at_ms, artwork_cache_key, artwork_uri, liked
-          ) VALUES ${valuesPlaceholders}
-          ON CONFLICT(id) DO UPDATE SET
-            uri = excluded.uri,
-            file_name = excluded.file_name,
-            folder_path = excluded.folder_path,
-            title = excluded.title,
-            artist = excluded.artist,
-            album = excluded.album,
-            album_artist = excluded.album_artist,
-            duration_ms = excluded.duration_ms,
-            track_number = excluded.track_number,
-            disc_number = excluded.disc_number,
-            year = excluded.year,
-            mime_type = excluded.mime_type,
-            size_bytes = excluded.size_bytes,
-            modified_at_ms = excluded.modified_at_ms,
-            artwork_cache_key = excluded.artwork_cache_key,
-            artwork_uri = excluded.artwork_uri,
-            liked = tracks.liked
-        `,
-          params
-        );
+        batches.push(changedTracks.slice(i, i + BATCH_SIZE));
       }
+
+      await Promise.all(
+        batches.map((batch) => {
+          const valuesPlaceholders = batch
+            .map(() => singleRowPlaceholder)
+            .join(", ");
+          const params = batch.flatMap((track) => [
+            track.id,
+            track.contentUri,
+            track.fileName,
+            track.relativePath,
+            track.title,
+            track.artist,
+            track.album,
+            track.albumArtist,
+            track.durationMs,
+            track.trackNumber,
+            track.discNumber,
+            track.year,
+            track.mimeType,
+            track.sizeBytes,
+            track.modifiedAtMs,
+            track.artworkCacheKey ?? null,
+            track.artworkUri ?? null,
+            existingById.get(track.id)?.liked ?? 0,
+          ]);
+
+          return transaction.runAsync(
+            `
+            INSERT INTO tracks (
+              id, uri, file_name, folder_path, title, artist, album, album_artist,
+              duration_ms, track_number, disc_number, year, mime_type, size_bytes,
+              modified_at_ms, artwork_cache_key, artwork_uri, liked
+            ) VALUES ${valuesPlaceholders}
+            ON CONFLICT(id) DO UPDATE SET
+              uri = excluded.uri,
+              file_name = excluded.file_name,
+              folder_path = excluded.folder_path,
+              title = excluded.title,
+              artist = excluded.artist,
+              album = excluded.album,
+              album_artist = excluded.album_artist,
+              duration_ms = excluded.duration_ms,
+              track_number = excluded.track_number,
+              disc_number = excluded.disc_number,
+              year = excluded.year,
+              mime_type = excluded.mime_type,
+              size_bytes = excluded.size_bytes,
+              modified_at_ms = excluded.modified_at_ms,
+              artwork_cache_key = excluded.artwork_cache_key,
+              artwork_uri = excluded.artwork_uri,
+              liked = tracks.liked
+          `,
+            params
+          );
+        })
+      );
     }
 
-    const removedIds = existingRows
-      .map((row) => row.id)
-      .filter((id) => !scannedIds.has(id));
+    const removedIds = existingRows.flatMap((row) =>
+      scannedIds.has(row.id) ? [] : [row.id]
+    );
+    const removedIdBatches: string[][] = [];
     for (let index = 0; index < removedIds.length; index += 500) {
-      const ids = removedIds.slice(index, index + 500);
-      const placeholders = ids.map(() => "?").join(", ");
-      await transaction.runAsync(
-        `DELETE FROM playlist_tracks WHERE track_id IN (${placeholders})`,
-        ids
-      );
-      await transaction.runAsync(
-        `DELETE FROM tracks WHERE id IN (${placeholders})`,
-        ids
-      );
+      removedIdBatches.push(removedIds.slice(index, index + 500));
     }
+    await Promise.all(
+      removedIdBatches.map(async (ids) => {
+        const placeholders = ids.map(() => "?").join(", ");
+        await transaction.runAsync(
+          `DELETE FROM playlist_tracks WHERE track_id IN (${placeholders})`,
+          ids
+        );
+        await transaction.runAsync(
+          `DELETE FROM tracks WHERE id IN (${placeholders})`,
+          ids
+        );
+      })
+    );
   });
 
   return getTracks();

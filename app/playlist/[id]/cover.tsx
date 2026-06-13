@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { launchImageLibraryAsync } from "expo-image-picker";
 import {
   type Asset,
@@ -19,7 +20,6 @@ import {
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Platform,
   StyleSheet,
   useWindowDimensions,
@@ -50,6 +50,12 @@ const initialPhotoGalleryState: PhotoGalleryState = {
   hasMore: true,
   loadState: "loading",
   photos: [],
+};
+
+const handleBack = () => {
+  if (router.canGoBack()) {
+    router.back();
+  }
 };
 
 interface PhotoTileProps {
@@ -103,12 +109,6 @@ function usePlaylistCoverController() {
 
   const tileSize = Math.floor(width / COLUMN_COUNT);
   const isDraftCover = id === "draft" && Boolean(returnPath);
-
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    }
-  };
 
   const finishWithCoverUri = useCallback(
     async (coverUri: string) => {
@@ -226,6 +226,10 @@ function usePlaylistCoverController() {
 
     loadingMoreRef.current = true;
     try {
+      if (!mountedRef.current) {
+        return;
+      }
+
       const result = await getAssetsAsync({
         after: endCursorRef.current,
         first: PAGE_SIZE,
@@ -233,29 +237,27 @@ function usePlaylistCoverController() {
         sortBy: [[SortBy.modificationTime, false]],
       });
 
-      if (!mountedRef.current) {
-        return;
+      if (mountedRef.current) {
+        const seenIds = new Set(photosRef.current.map((photo) => photo.id));
+        const nextPhotos = [
+          ...photosRef.current,
+          ...result.assets.filter((photo) => {
+            if (seenIds.has(photo.id)) {
+              return false;
+            }
+            seenIds.add(photo.id);
+            return true;
+          }),
+        ];
+
+        photosRef.current = nextPhotos;
+        endCursorRef.current = result.endCursor;
+        dispatchPhotoGalleryState({
+          hasMore: result.hasNextPage,
+          loadState: "loaded",
+          photos: nextPhotos,
+        });
       }
-
-      const seenIds = new Set(photosRef.current.map((photo) => photo.id));
-      const nextPhotos = [
-        ...photosRef.current,
-        ...result.assets.filter((photo) => {
-          if (seenIds.has(photo.id)) {
-            return false;
-          }
-          seenIds.add(photo.id);
-          return true;
-        }),
-      ];
-
-      photosRef.current = nextPhotos;
-      endCursorRef.current = result.endCursor;
-      dispatchPhotoGalleryState({
-        hasMore: result.hasNextPage,
-        loadState: "loaded",
-        photos: nextPhotos,
-      });
     } finally {
       loadingMoreRef.current = false;
     }

@@ -60,14 +60,19 @@ export const getPlaylistTracks = (
   if (!playlist) {
     return [];
   }
-  return playlist.trackIds
-    .map((trackId) => trackById.get(trackId))
-    .filter((track): track is LocalTrack => Boolean(track));
+  const playlistTracks: LocalTrack[] = [];
+  for (const trackId of playlist.trackIds) {
+    const track = trackById.get(trackId);
+    if (track) {
+      playlistTracks.push(track);
+    }
+  }
+  return playlistTracks;
 };
 
 export const buildTrackSearchIndex = (tracks: LocalTrack[]) =>
   tracks.map((track) => ({
-    haystack: [
+    text: [
       track.title,
       track.artist,
       track.album,
@@ -87,9 +92,14 @@ export const searchTracks = (
   if (!normalisedQuery) {
     return [];
   }
-  return searchIndex
-    .filter((entry) => entry.haystack.includes(normalisedQuery))
-    .map((entry) => entry.track);
+  const matches: LocalTrack[] = [];
+  for (const entry of searchIndex) {
+    const { text } = entry;
+    if (text.includes(normalisedQuery)) {
+      matches.push(entry.track);
+    }
+  }
+  return matches;
 };
 
 export const formatDuration = (durationMs: number) => {

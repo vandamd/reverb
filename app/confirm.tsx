@@ -7,6 +7,12 @@ import { SwipeBackContainer } from "@/components/SwipeBackContainer";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { n } from "@/utils/scaling";
 
+const handleBack = () => {
+  if (router.canGoBack()) {
+    router.back();
+  }
+};
+
 export default function ConfirmScreen() {
   const { invertColors } = useInvertColors();
   const params = useLocalSearchParams<{
@@ -23,12 +29,6 @@ export default function ConfirmScreen() {
     router.navigate(
       `${path}${separator}confirmed=true&action=${encodeURIComponent(params.action ?? "")}` as Href
     );
-  };
-
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    }
   };
 
   const textColor = invertColors ? "black" : "white";

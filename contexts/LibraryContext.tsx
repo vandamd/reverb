@@ -2,8 +2,8 @@ import type { PermissionStatus } from "expo-modules-core";
 import {
   createContext,
   type ReactNode,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useReducer,
@@ -149,7 +149,7 @@ type LibraryAction =
   | { payload: { liked: boolean; trackId: string }; type: "trackLikedChanged" };
 
 const getLikedTrackIds = (tracks: LocalTrack[]) =>
-  new Set(tracks.filter((track) => track.liked).map((track) => track.id));
+  new Set(tracks.flatMap((track) => (track.liked ? [track.id] : [])));
 
 const initialLibraryState: LibraryState = {
   error: null,
@@ -238,13 +238,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [tracks]
   );
   const searchIndex = useMemo(() => buildTrackSearchIndex(tracks), [tracks]);
-  const likedTracks = useMemo(
-    () =>
-      tracks
-        .filter((track) => likedTrackIds.has(track.id))
-        .map((track) => (track.liked ? track : { ...track, liked: true })),
-    [likedTrackIds, tracks]
-  );
+  const likedTracks = useMemo(() => {
+    const nextLikedTracks: LocalTrack[] = [];
+    for (const track of tracks) {
+      if (likedTrackIds.has(track.id)) {
+        nextLikedTracks.push(track.liked ? track : { ...track, liked: true });
+      }
+    }
+    return nextLikedTracks;
+  }, [likedTrackIds, tracks]);
 
   const refreshLibrary = useCallback(async () => {
     dispatch({ payload: true, type: "scanningChanged" });
@@ -495,7 +497,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 }
 
 export const useLibraryActions = () => {
-  const context = useContext(LibraryActionsContext);
+  const context = use(LibraryActionsContext);
   if (!context) {
     throw new Error("useLibraryActions must be used within LibraryProvider");
   }
@@ -503,7 +505,7 @@ export const useLibraryActions = () => {
 };
 
 export const useLibraryAlbums = () => {
-  const context = useContext(LibraryAlbumsContext);
+  const context = use(LibraryAlbumsContext);
   if (!context) {
     throw new Error("useLibraryAlbums must be used within LibraryProvider");
   }
@@ -511,7 +513,7 @@ export const useLibraryAlbums = () => {
 };
 
 export const useLibraryPlaylists = () => {
-  const context = useContext(LibraryPlaylistsContext);
+  const context = use(LibraryPlaylistsContext);
   if (!context) {
     throw new Error("useLibraryPlaylists must be used within LibraryProvider");
   }
@@ -519,7 +521,7 @@ export const useLibraryPlaylists = () => {
 };
 
 export const useLibraryTracks = () => {
-  const context = useContext(LibraryTracksContext);
+  const context = use(LibraryTracksContext);
   if (!context) {
     throw new Error("useLibraryTracks must be used within LibraryProvider");
   }
@@ -527,7 +529,7 @@ export const useLibraryTracks = () => {
 };
 
 export const useLibraryLikedTracks = () => {
-  const context = useContext(LibraryLikesContext);
+  const context = use(LibraryLikesContext);
   if (!context) {
     throw new Error(
       "useLibraryLikedTracks must be used within LibraryProvider"
@@ -540,7 +542,7 @@ export const useTrackLiked = (
   trackId: string | undefined,
   fallback = false
 ) => {
-  const context = useContext(LibraryLikesContext);
+  const context = use(LibraryLikesContext);
   if (!context) {
     throw new Error("useTrackLiked must be used within LibraryProvider");
   }
@@ -548,7 +550,7 @@ export const useTrackLiked = (
 };
 
 export const useLibraryStatus = () => {
-  const context = useContext(LibraryStatusContext);
+  const context = use(LibraryStatusContext);
   if (!context) {
     throw new Error("useLibraryStatus must be used within LibraryProvider");
   }

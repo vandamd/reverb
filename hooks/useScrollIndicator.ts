@@ -1,16 +1,21 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import {
-  Animated,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from "react-native";
+  type AnimatedStyle,
+  type SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { n } from "@/utils/scaling";
 
 interface UseScrollIndicatorReturn {
   contentHeight: number;
   handleScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   scrollIndicatorHeight: number;
-  scrollIndicatorPosition: Animated.Value;
+  scrollIndicatorPosition: SharedValue<number>;
+  scrollIndicatorStyle: AnimatedStyle<{
+    transform: { translateY: number }[];
+  }>;
   scrollViewHeight: number;
   setContentHeight: (height: number) => void;
   setScrollViewHeight: (height: number) => void;
@@ -20,7 +25,7 @@ export function useScrollIndicator(): UseScrollIndicatorReturn {
   const [contentHeight, setContentHeight] = useState<number>(0);
   const [scrollViewHeight, setScrollViewHeight] = useState<number>(0);
   const scrollY = useRef(0);
-  const scrollIndicatorPosition = useRef(new Animated.Value(0)).current;
+  const scrollIndicatorPosition = useSharedValue(0);
 
   const scrollIndicatorHeight =
     scrollViewHeight > 0 &&
@@ -29,8 +34,8 @@ export function useScrollIndicator(): UseScrollIndicatorReturn {
       ? Math.max((scrollViewHeight * scrollViewHeight) / contentHeight, n(20))
       : 0;
 
-  const handleScroll = useMemo(
-    () => (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollY.current = event.nativeEvent.contentOffset.y;
 
       const position =
@@ -45,21 +50,26 @@ export function useScrollIndicator(): UseScrollIndicatorReturn {
             )
           : 0;
 
-      scrollIndicatorPosition.setValue(position);
+      scrollIndicatorPosition.value = position;
     },
     [
       contentHeight,
       scrollIndicatorHeight,
-      scrollIndicatorPosition.setValue,
+      scrollIndicatorPosition,
       scrollViewHeight,
     ]
   );
+
+  const scrollIndicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollIndicatorPosition.value }],
+  }));
 
   return {
     contentHeight,
     handleScroll,
     scrollIndicatorHeight,
     scrollIndicatorPosition,
+    scrollIndicatorStyle,
     scrollViewHeight,
     setContentHeight,
     setScrollViewHeight,

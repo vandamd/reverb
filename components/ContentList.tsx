@@ -1,13 +1,13 @@
 import { router, useSegments } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import {
-  Animated,
   FlatList,
   type FlatListProps,
   StyleSheet,
   View,
   type ViewStyle,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { Header } from "@/components/Header";
 import type { MaterialIconName } from "@/components/MaterialIcon";
 import { SwipeBackContainer } from "@/components/SwipeBackContainer";
@@ -67,7 +67,7 @@ export function ContentList<ItemT>({
   const {
     handleScroll,
     scrollIndicatorHeight,
-    scrollIndicatorPosition,
+    scrollIndicatorStyle,
     setContentHeight,
     setScrollViewHeight,
   } = useScrollIndicator();
@@ -160,8 +160,8 @@ export function ContentList<ItemT>({
                   {
                     backgroundColor: invertColors ? "black" : "white",
                     height: scrollIndicatorHeight,
-                    transform: [{ translateY: scrollIndicatorPosition }],
                   },
+                  scrollIndicatorStyle,
                 ]}
               />
             </View>

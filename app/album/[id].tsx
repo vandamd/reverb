@@ -1,5 +1,5 @@
 import { type Href, router, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import ContentContainer from "@/components/ContentContainer";
 import { ContentList } from "@/components/ContentList";
@@ -18,7 +18,7 @@ export default function AlbumDetailScreen() {
   const { albums } = useLibraryAlbums();
   const { playQueue } = usePlaybackControls();
   const album = albums.find((item) => item.id === id);
-  const albumTracks = album?.tracks ?? [];
+  const albumTracks = useMemo(() => album?.tracks ?? [], [album?.tracks]);
   const renderTrack = useCallback(
     ({ index, item: track }: { index: number; item: LocalTrack }) => (
       <View

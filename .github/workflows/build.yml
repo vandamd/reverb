@@ -27,13 +27,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
       - name: Get app info from app.json
         id: get_app_info
         run: |
@@ -43,7 +36,14 @@ jobs:
           echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build Android app
         run: eas build --platform android --profile production --local --output ${{ github.workspace }}/${{ env.APP_NAME }}_${{ env.VERSION }}.apk

@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, use, useMemo } from "react";
 import { usePersistedState } from "@/hooks/usePersistedState";
 
 interface CustomiseSettingsContextType {
@@ -32,24 +32,34 @@ export function CustomiseSettingsProvider({
     false
   );
 
+  const value = useMemo(
+    () => ({
+      hideLikedSongs,
+      hideLyrics,
+      hidePlaylists,
+      setHideLikedSongs,
+      setHideLyrics,
+      setHidePlaylists,
+    }),
+    [
+      hideLikedSongs,
+      hideLyrics,
+      hidePlaylists,
+      setHideLikedSongs,
+      setHideLyrics,
+      setHidePlaylists,
+    ]
+  );
+
   return (
-    <CustomiseSettingsContext.Provider
-      value={{
-        hideLikedSongs,
-        hideLyrics,
-        hidePlaylists,
-        setHideLikedSongs,
-        setHideLyrics,
-        setHidePlaylists,
-      }}
-    >
+    <CustomiseSettingsContext.Provider value={value}>
       {children}
     </CustomiseSettingsContext.Provider>
   );
 }
 
 export const useCustomiseSettings = () => {
-  const context = useContext(CustomiseSettingsContext);
+  const context = use(CustomiseSettingsContext);
   if (!context) {
     throw new Error(
       "useCustomiseSettings must be used within CustomiseSettingsProvider"

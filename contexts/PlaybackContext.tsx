@@ -2,8 +2,8 @@ import { Image } from "expo-image";
 import {
   createContext,
   type ReactNode,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -604,8 +604,6 @@ function usePlaybackProviderValues() {
       nextRepeatMode: RepeatMode,
       startPositionMs = 0
     ) => {
-      await ensureTrackPlayerReady();
-      await TrackPlayer.reset();
       if (tracks.length === 0) {
         publishPlaybackSnapshot({
           activeIndex: -1,
@@ -617,6 +615,8 @@ function usePlaybackProviderValues() {
         return;
       }
 
+      await ensureTrackPlayerReady();
+      await TrackPlayer.reset();
       const safeIndex = Math.min(Math.max(nextIndex, 0), tracks.length - 1);
       await TrackPlayer.add(tracks.map(toTrackPlayerTrack));
       await TrackPlayer.setRepeatMode(toTrackPlayerRepeatMode(nextRepeatMode));
@@ -816,8 +816,8 @@ function usePlaybackProviderValues() {
 
     try {
       publishPlaybackSnapshot({ error: null });
-      await ensureTrackPlayerReady();
       if (currentSnapshot.repeatMode === "track") {
+        await ensureTrackPlayerReady();
         await runWithPlayWhenReady(true, async () => {
           publishPlaybackSnapshot({
             ...getActiveTrackPatch(currentSnapshot.queue, currentIndex, 0),
@@ -830,6 +830,7 @@ function usePlaybackProviderValues() {
 
       if (currentIndex + 1 >= currentSnapshot.queue.length) {
         if (currentSnapshot.repeatMode === "queue") {
+          await ensureTrackPlayerReady();
           await runWithPlayWhenReady(true, async () => {
             publishPlaybackSnapshot({
               ...getActiveTrackPatch(currentSnapshot.queue, 0, 0),
@@ -839,10 +840,12 @@ function usePlaybackProviderValues() {
           });
           return;
         }
+        await ensureTrackPlayerReady();
         await runWithPlayWhenReady(false, () => TrackPlayer.pause());
         return;
       }
 
+      await ensureTrackPlayerReady();
       await runWithPlayWhenReady(true, async () => {
         publishPlaybackSnapshot({
           ...getActiveTrackPatch(currentSnapshot.queue, currentIndex + 1, 0),
@@ -865,7 +868,6 @@ function usePlaybackProviderValues() {
 
     try {
       publishPlaybackSnapshot({ error: null });
-      await ensureTrackPlayerReady();
       const currentDurationMs =
         durationMs || currentSnapshot.queue[currentIndex]?.durationMs || 0;
       const restartCurrentTrack =
@@ -877,11 +879,13 @@ function usePlaybackProviderValues() {
           durationMs: currentDurationMs,
           progressMs: 0,
         });
+        await ensureTrackPlayerReady();
         await TrackPlayer.seekTo(0);
         return;
       }
 
       const previousIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+      await ensureTrackPlayerReady();
       await runWithPlayWhenReady(true, async () => {
         publishPlaybackSnapshot({
           ...getActiveTrackPatch(currentSnapshot.queue, previousIndex, 0),
@@ -903,19 +907,19 @@ function usePlaybackProviderValues() {
   const togglePlayPause = useCallback(async () => {
     const currentSnapshot = getPlaybackSnapshot();
     const currentValues = getSnapshotPlaybackValues(currentSnapshot);
+    const shouldRestartQueue =
+      (currentSnapshot.playbackState === State.None ||
+        currentSnapshot.playbackState === State.Stopped) &&
+      currentSnapshot.queue.length > 0;
 
     try {
       publishPlaybackSnapshot({ error: null });
-      await ensureTrackPlayerReady();
       if (currentValues.isPlaying) {
+        await ensureTrackPlayerReady();
         await runWithPlayWhenReady(false, () => TrackPlayer.pause());
         return;
       }
-      if (
-        (currentSnapshot.playbackState === State.None ||
-          currentSnapshot.playbackState === State.Stopped) &&
-        currentSnapshot.queue.length > 0
-      ) {
+      if (shouldRestartQueue) {
         const startPositionMs = Math.min(
           currentValues.progressMs,
           currentValues.durationMs
@@ -931,6 +935,7 @@ function usePlaybackProviderValues() {
         );
         return;
       }
+      await ensureTrackPlayerReady();
       await runWithPlayWhenReady(true, () => TrackPlayer.play());
     } catch (playbackError) {
       publishPlaybackError(playbackError);
@@ -1108,7 +1113,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 }
 
 export const usePlaybackTrack = () => {
-  const context = useContext(PlaybackTrackContext);
+  const context = use(PlaybackTrackContext);
   if (!context) {
     throw new Error("usePlaybackTrack must be used within PlaybackProvider");
   }
@@ -1116,7 +1121,7 @@ export const usePlaybackTrack = () => {
 };
 
 export const usePlaybackProgress = () => {
-  const context = useContext(PlaybackProgressContext);
+  const context = use(PlaybackProgressContext);
   if (!context) {
     throw new Error("usePlaybackProgress must be used within PlaybackProvider");
   }
@@ -1124,7 +1129,7 @@ export const usePlaybackProgress = () => {
 };
 
 export const usePlaybackStatus = () => {
-  const context = useContext(PlaybackStatusContext);
+  const context = use(PlaybackStatusContext);
   if (!context) {
     throw new Error("usePlaybackStatus must be used within PlaybackProvider");
   }
@@ -1132,7 +1137,7 @@ export const usePlaybackStatus = () => {
 };
 
 export const usePlaybackControls = () => {
-  const context = useContext(PlaybackControlsContext);
+  const context = use(PlaybackControlsContext);
   if (!context) {
     throw new Error("usePlaybackControls must be used within PlaybackProvider");
   }

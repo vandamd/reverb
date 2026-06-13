@@ -26,6 +26,25 @@ const getCoverExtension = (asset: CoverAsset) => {
   return "jpg";
 };
 
+const copyFirstAvailableSource = async (
+  sourceUris: string[],
+  destination: string,
+  index = 0,
+  lastError?: unknown
+): Promise<{ error?: unknown; ok: boolean }> => {
+  const sourceUri = sourceUris[index];
+  if (!sourceUri) {
+    return { error: lastError, ok: false };
+  }
+
+  try {
+    await copyAsync({ from: sourceUri, to: destination });
+    return { ok: true };
+  } catch (error) {
+    return copyFirstAvailableSource(sourceUris, destination, index + 1, error);
+  }
+};
+
 export const saveCoverImage = async (playlistId: string, asset: CoverAsset) => {
   if (!documentDirectory) {
     return asset.uri;
@@ -37,14 +56,9 @@ export const saveCoverImage = async (playlistId: string, asset: CoverAsset) => {
   const destination = `${directory}${playlistId}-${Date.now()}.${extension}`;
   const sourceUris = [...new Set([asset.uri, ...(asset.sourceUris ?? [])])];
 
-  let lastError: unknown;
-  for (const sourceUri of sourceUris) {
-    try {
-      await copyAsync({ from: sourceUri, to: destination });
-      return destination;
-    } catch (error) {
-      lastError = error;
-    }
+  const copyResult = await copyFirstAvailableSource(sourceUris, destination);
+  if (copyResult.ok) {
+    return destination;
   }
 
   if (asset.base64) {
@@ -54,7 +68,7 @@ export const saveCoverImage = async (playlistId: string, asset: CoverAsset) => {
     return destination;
   }
 
-  throw lastError instanceof Error
-    ? lastError
+  throw copyResult.error instanceof Error
+    ? copyResult.error
     : new Error("Unable to save cover image.");
 };

@@ -7,6 +7,20 @@ import { TextInput } from "@/components/TextInput";
 import { useLibraryActions } from "@/contexts/LibraryContext";
 import { n } from "@/utils/scaling";
 
+const handleChangeCover = () => {
+  router.push({
+    pathname: "/playlist/[id]/cover",
+    params: {
+      id: "draft",
+      returnPath: "/playlist/new",
+    },
+  });
+};
+
+const handleRemoveCover = () => {
+  router.setParams({ coverUri: undefined });
+};
+
 export default function NewPlaylistScreen() {
   const { coverUri } = useLocalSearchParams<{ coverUri?: string }>();
   const [name, setName] = useState("");
@@ -18,20 +32,6 @@ export default function NewPlaylistScreen() {
     }
     await createPlaylist(name, coverUri ?? null);
     router.replace("/(tabs)/playlists" as Href);
-  };
-
-  const handleChangeCover = () => {
-    router.push({
-      pathname: "/playlist/[id]/cover",
-      params: {
-        id: "draft",
-        returnPath: "/playlist/new",
-      },
-    });
-  };
-
-  const handleRemoveCover = () => {
-    router.setParams({ coverUri: undefined });
   };
 
   return (
