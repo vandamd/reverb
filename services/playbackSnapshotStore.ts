@@ -13,7 +13,6 @@ export const playbackSnapshotEvents = [
   Event.PlaybackActiveTrackChanged,
   Event.PlaybackError,
   Event.PlaybackPlayWhenReadyChanged,
-  Event.PlaybackProgressUpdated,
   Event.PlaybackQueueEnded,
   Event.PlaybackState,
 ] satisfies Event[];
@@ -21,6 +20,7 @@ export const playbackSnapshotEvents = [
 export type PlaybackSnapshotEventType = (typeof playbackSnapshotEvents)[number];
 export type PlaybackSnapshotEvent =
   EventPayloadByEventWithType[PlaybackSnapshotEventType];
+export type PlaybackPositionRate = 0 | 1;
 
 export interface PlaybackSnapshot {
   activeIndex: number;
@@ -29,6 +29,7 @@ export interface PlaybackSnapshot {
   error: string | null;
   playbackState: State | undefined;
   playWhenReady: boolean | undefined;
+  positionRate: PlaybackPositionRate;
   progressMs: number;
   queue: LocalTrack[];
   queueRevision: number;
@@ -38,11 +39,47 @@ export interface PlaybackSnapshot {
   updatedAtMs: number;
 }
 
+export interface StoppedPlaybackSnapshot {
+  activeIndex?: number;
+  activeTrackId?: string;
+  capturedAtMs: number;
+  duration: number;
+  position: number;
+}
+
 type PlaybackSnapshotPatch = Partial<PlaybackSnapshot>;
 type PlaybackSnapshotUpdate =
   | PlaybackSnapshotPatch
   | ((snapshot: PlaybackSnapshot) => PlaybackSnapshotPatch);
 type PlaybackSnapshotListener = () => void;
+
+interface PublishPlaybackSnapshotOptions {
+  observedAtMs?: number;
+  persist?: boolean;
+  projectBeforeUpdate?: boolean;
+}
+
+type PersistedPlaybackAnchor = Pick<
+  PlaybackSnapshot,
+  | "activeIndex"
+  | "activeTrackId"
+  | "durationMs"
+  | "playbackState"
+  | "playWhenReady"
+  | "positionRate"
+  | "progressMs"
+  | "updatedAtMs"
+>;
+
+type PersistedPlaybackQueue = Pick<
+  PlaybackSnapshot,
+  "queue" | "queueRevision" | "repeatMode" | "shuffle" | "sourceQueue"
+>;
+
+type PersistedPlaybackSnapshotV1 = Omit<
+  PlaybackSnapshot,
+  "error" | "positionRate"
+>;
 
 const initialPlaybackSnapshot: PlaybackSnapshot = {
   activeIndex: -1,
@@ -51,6 +88,7 @@ const initialPlaybackSnapshot: PlaybackSnapshot = {
   error: null,
   playbackState: undefined,
   playWhenReady: undefined,
+  positionRate: 0,
   progressMs: 0,
   queue: [],
   queueRevision: 0,
@@ -60,26 +98,28 @@ const initialPlaybackSnapshot: PlaybackSnapshot = {
   updatedAtMs: Date.now(),
 };
 
-type PersistedPlaybackSnapshot = Pick<
-  PlaybackSnapshot,
-  | "activeIndex"
-  | "activeTrackId"
-  | "durationMs"
-  | "playbackState"
-  | "playWhenReady"
-  | "progressMs"
-  | "queue"
-  | "queueRevision"
-  | "repeatMode"
-  | "shuffle"
-  | "sourceQueue"
-  | "updatedAtMs"
->;
-
-const playbackSnapshotStorageKey = "reverb:playbackSnapshot:v1";
-const progressPersistenceIntervalMs = 15_000;
+const playbackSnapshotStorageKeyV1 = "reverb:playbackSnapshot:v1";
+const playbackAnchorStorageKey = "reverb:playbackAnchor:v2";
+const playbackQueueStorageKey = "reverb:playbackQueue:v2";
 const projectedReadStaleAfterMs = 1000;
 const duplicateEventWindowMs = 100;
+
+const anchorKeys = new Set<keyof PlaybackSnapshot>([
+  "activeIndex",
+  "activeTrackId",
+  "durationMs",
+  "playbackState",
+  "playWhenReady",
+  "positionRate",
+  "progressMs",
+]);
+const queueKeys = new Set<keyof PlaybackSnapshot>([
+  "queue",
+  "queueRevision",
+  "repeatMode",
+  "shuffle",
+  "sourceQueue",
+]);
 
 export const trackPlayerPlayingStates = new Set<State>([
   State.Buffering,
@@ -91,9 +131,10 @@ export const trackPlayerPlayingStates = new Set<State>([
 let playbackSnapshot = initialPlaybackSnapshot;
 let suppressActiveTrackEvents = false;
 let hydrationPromise: Promise<void> | null = null;
-let lastPersistedProgressAtMs = 0;
-let lastPersistedSnapshotJson = "";
-let persistQueue: Promise<void> = Promise.resolve();
+let lastPersistedAnchorJson = "";
+let lastPersistedQueueJson = "";
+let anchorPersistQueue: Promise<void> = Promise.resolve();
+let queuePersistQueue: Promise<void> = Promise.resolve();
 let lastPlaybackEventKey = "";
 let lastPlaybackEventAtMs = 0;
 const playbackSnapshotListeners = new Set<PlaybackSnapshotListener>();
@@ -107,12 +148,6 @@ export const getTrackId = (track: Track | undefined) => {
 
 const getTrackDurationMs = (track: Track | undefined) =>
   typeof track?.duration === "number" ? Math.round(track.duration * 1000) : 0;
-
-const getProgressMs = (positionSeconds: number) =>
-  Math.max(0, Math.round(positionSeconds * 1000));
-
-const getDurationMs = (durationSeconds: number, fallbackDurationMs: number) =>
-  Math.round(durationSeconds * 1000) || fallbackDurationMs;
 
 const getTrackIndexById = (queue: LocalTrack[], trackId: string | null) =>
   trackId ? queue.findIndex((track) => track.id === trackId) : -1;
@@ -143,13 +178,6 @@ export const projectPlaybackSnapshot = (
 ): PlaybackSnapshot =>
   projectPlaybackSnapshotValue(snapshot, nowMs, {
     endedState: State.Ended,
-    playingStates: trackPlayerPlayingStates,
-  });
-
-const hasSnapshotChanged = (nextSnapshot: PlaybackSnapshot) =>
-  Object.keys(nextSnapshot).some((key) => {
-    const snapshotKey = key as keyof PlaybackSnapshot;
-    return !Object.is(nextSnapshot[snapshotKey], playbackSnapshot[snapshotKey]);
   });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -164,65 +192,81 @@ const isOptionalBoolean = (value: unknown): value is boolean | undefined =>
 const isTrackId = (value: unknown): value is string | null =>
   typeof value === "string" || value === null;
 
+const isPositionRate = (value: unknown): value is PlaybackPositionRate =>
+  value === 0 || value === 1;
+
 const getFiniteNumber = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-const toPersistedPlaybackSnapshot = (
+const toPersistedPlaybackAnchor = (
   snapshot: PlaybackSnapshot
-): PersistedPlaybackSnapshot => ({
+): PersistedPlaybackAnchor => ({
   activeIndex: snapshot.activeIndex,
   activeTrackId: snapshot.activeTrackId,
   durationMs: snapshot.durationMs,
   playbackState: snapshot.playbackState,
   playWhenReady: snapshot.playWhenReady,
+  positionRate: snapshot.positionRate,
   progressMs: snapshot.progressMs,
+  updatedAtMs: snapshot.updatedAtMs,
+});
+
+const toPersistedPlaybackQueue = (
+  snapshot: PlaybackSnapshot
+): PersistedPlaybackQueue => ({
   queue: snapshot.queue,
   queueRevision: snapshot.queueRevision,
   repeatMode: snapshot.repeatMode,
   shuffle: snapshot.shuffle,
   sourceQueue: snapshot.sourceQueue,
-  updatedAtMs: snapshot.updatedAtMs,
 });
 
-const getPersistedPlaybackSnapshot = (
+const getPersistedPlaybackAnchor = (
   value: unknown
-): PersistedPlaybackSnapshot | null => {
-  if (!(isRecord(value) && Array.isArray(value.queue))) {
+): PersistedPlaybackAnchor | null => {
+  if (!isRecord(value)) {
     return null;
   }
-
-  const repeatMode = isRepeatMode(value.repeatMode)
-    ? value.repeatMode
-    : initialPlaybackSnapshot.repeatMode;
-  const activeTrackId = isTrackId(value.activeTrackId)
-    ? value.activeTrackId
-    : null;
-  const playWhenReady = isOptionalBoolean(value.playWhenReady)
-    ? value.playWhenReady
-    : undefined;
 
   return {
     activeIndex: getFiniteNumber(
       value.activeIndex,
       initialPlaybackSnapshot.activeIndex
     ),
-    activeTrackId,
+    activeTrackId: isTrackId(value.activeTrackId) ? value.activeTrackId : null,
     durationMs: getFiniteNumber(
       value.durationMs,
       initialPlaybackSnapshot.durationMs
     ),
     playbackState: value.playbackState as State | undefined,
-    playWhenReady,
+    playWhenReady: isOptionalBoolean(value.playWhenReady)
+      ? value.playWhenReady
+      : undefined,
+    positionRate: isPositionRate(value.positionRate) ? value.positionRate : 0,
     progressMs: getFiniteNumber(
       value.progressMs,
       initialPlaybackSnapshot.progressMs
     ),
+    updatedAtMs: getFiniteNumber(value.updatedAtMs, Date.now()),
+  };
+};
+
+const getPersistedPlaybackQueue = (
+  value: unknown
+): PersistedPlaybackQueue | null => {
+  if (!(isRecord(value) && Array.isArray(value.queue))) {
+    return null;
+  }
+
+  return {
     queue: value.queue as LocalTrack[],
     queueRevision: getFiniteNumber(
       value.queueRevision,
       initialPlaybackSnapshot.queueRevision
     ),
-    repeatMode,
+    repeatMode: isRepeatMode(value.repeatMode)
+      ? value.repeatMode
+      : initialPlaybackSnapshot.repeatMode,
     shuffle:
       typeof value.shuffle === "boolean"
         ? value.shuffle
@@ -230,75 +274,52 @@ const getPersistedPlaybackSnapshot = (
     sourceQueue: Array.isArray(value.sourceQueue)
       ? (value.sourceQueue as LocalTrack[])
       : (value.queue as LocalTrack[]),
-    updatedAtMs: getFiniteNumber(value.updatedAtMs, Date.now()),
   };
 };
 
-const immediatePersistenceKeys = new Set<keyof PlaybackSnapshot>([
-  "activeIndex",
-  "activeTrackId",
-  "playbackState",
-  "playWhenReady",
-  "queue",
-  "queueRevision",
-  "repeatMode",
-  "shuffle",
-  "sourceQueue",
-]);
-
-const shouldPersistPlaybackSnapshot = (
-  patch: PlaybackSnapshotPatch,
-  snapshot: PlaybackSnapshot,
-  nowMs: number
-) => {
-  const patchKeys = Object.keys(patch) as (keyof PlaybackSnapshot)[];
-  const hasRecoverableChange = patchKeys.some(
-    (key) => key !== "error" && key !== "updatedAtMs"
-  );
-
-  if (!hasRecoverableChange) {
-    return false;
+const getPersistedPlaybackSnapshotV1 = (
+  value: unknown
+): PersistedPlaybackSnapshotV1 | null => {
+  const queue = getPersistedPlaybackQueue(value);
+  const anchor = getPersistedPlaybackAnchor(value);
+  if (!(queue && anchor)) {
+    return null;
   }
 
-  if (
-    snapshot.playWhenReady !== true ||
-    patchKeys.some((key) => immediatePersistenceKeys.has(key))
-  ) {
-    return true;
-  }
-
-  return nowMs - lastPersistedProgressAtMs >= progressPersistenceIntervalMs;
+  return {
+    ...queue,
+    ...anchor,
+  };
 };
 
-const persistPlaybackSnapshot = (snapshot: PlaybackSnapshot, force = false) => {
-  const persistedSnapshot = toPersistedPlaybackSnapshot(snapshot);
-  const snapshotJson = JSON.stringify(persistedSnapshot);
-
-  if (!force && snapshotJson === lastPersistedSnapshotJson) {
-    return persistQueue;
+const persistPlaybackAnchor = (snapshot: PlaybackSnapshot, force = false) => {
+  const anchorJson = JSON.stringify(toPersistedPlaybackAnchor(snapshot));
+  if (!force && anchorJson === lastPersistedAnchorJson) {
+    return anchorPersistQueue;
   }
 
-  lastPersistedSnapshotJson = snapshotJson;
-  lastPersistedProgressAtMs = Date.now();
-  persistQueue = persistQueue
-    .catch(() => {
-      // Persistence is best-effort; playback state remains in memory.
-    })
-    .then(() => AsyncStorage.setItem(playbackSnapshotStorageKey, snapshotJson))
-    .catch(() => {
-      // Persistence is best-effort; playback state remains in memory.
-    });
+  lastPersistedAnchorJson = anchorJson;
+  anchorPersistQueue = anchorPersistQueue
+    .catch(() => undefined)
+    .then(() => AsyncStorage.setItem(playbackAnchorStorageKey, anchorJson))
+    .catch(() => undefined);
 
-  return persistQueue;
+  return anchorPersistQueue;
 };
 
-const queuePlaybackSnapshotPersistence = (
-  patch: PlaybackSnapshotPatch,
-  snapshot: PlaybackSnapshot
-) => {
-  if (shouldPersistPlaybackSnapshot(patch, snapshot, Date.now())) {
-    persistPlaybackSnapshot(snapshot);
+const persistPlaybackQueue = (snapshot: PlaybackSnapshot, force = false) => {
+  const queueJson = JSON.stringify(toPersistedPlaybackQueue(snapshot));
+  if (!force && queueJson === lastPersistedQueueJson) {
+    return queuePersistQueue;
   }
+
+  lastPersistedQueueJson = queueJson;
+  queuePersistQueue = queuePersistQueue
+    .catch(() => undefined)
+    .then(() => AsyncStorage.setItem(playbackQueueStorageKey, queueJson))
+    .catch(() => undefined);
+
+  return queuePersistQueue;
 };
 
 const emitPlaybackSnapshotChange = () => {
@@ -307,14 +328,43 @@ const emitPlaybackSnapshotChange = () => {
   }
 };
 
+const getChangedKeys = (
+  previousSnapshot: PlaybackSnapshot,
+  nextSnapshot: PlaybackSnapshot
+) =>
+  (Object.keys(nextSnapshot) as (keyof PlaybackSnapshot)[]).filter(
+    (key) => !Object.is(previousSnapshot[key], nextSnapshot[key])
+  );
+
+const commitPlaybackSnapshot = (
+  nextSnapshot: PlaybackSnapshot,
+  persist: boolean
+) => {
+  const previousSnapshot = playbackSnapshot;
+  const changedKeys = getChangedKeys(previousSnapshot, nextSnapshot);
+  if (changedKeys.length === 0) {
+    return playbackSnapshot;
+  }
+
+  playbackSnapshot = nextSnapshot;
+  if (persist) {
+    if (changedKeys.some((key) => anchorKeys.has(key))) {
+      persistPlaybackAnchor(nextSnapshot);
+    }
+    if (changedKeys.some((key) => queueKeys.has(key))) {
+      persistPlaybackQueue(nextSnapshot);
+    }
+  }
+  emitPlaybackSnapshotChange();
+  return playbackSnapshot;
+};
+
 const canProjectPlaybackSnapshot = (
   snapshot: PlaybackSnapshot,
   nowMs: number
 ) =>
   nowMs - snapshot.updatedAtMs >= projectedReadStaleAfterMs &&
-  snapshot.playWhenReady === true &&
-  snapshot.playbackState !== undefined &&
-  trackPlayerPlayingStates.has(snapshot.playbackState) &&
+  snapshot.positionRate === 1 &&
   getPlaybackSnapshotActiveTrack(snapshot) !== null;
 
 const getProjectedPlaybackSnapshotForRead = () => {
@@ -323,13 +373,10 @@ const getProjectedPlaybackSnapshotForRead = () => {
     return playbackSnapshot;
   }
 
-  const nextSnapshot = projectPlaybackSnapshot(playbackSnapshot, nowMs);
-  if (!hasSnapshotChanged(nextSnapshot)) {
-    return playbackSnapshot;
-  }
-
-  playbackSnapshot = nextSnapshot;
-  return playbackSnapshot;
+  return commitPlaybackSnapshot(
+    projectPlaybackSnapshot(playbackSnapshot, nowMs),
+    false
+  );
 };
 
 export const getPlaybackSnapshot = () => getProjectedPlaybackSnapshotForRead();
@@ -343,81 +390,195 @@ export const subscribePlaybackSnapshot = (
   };
 };
 
-export const publishPlaybackSnapshot = (update: PlaybackSnapshotUpdate) => {
-  const patch =
-    typeof update === "function" ? update(playbackSnapshot) : update;
-  const timestampedPatch =
-    patch.updatedAtMs === undefined
-      ? { ...patch, updatedAtMs: Date.now() }
-      : patch;
-  const nextSnapshot = { ...playbackSnapshot, ...timestampedPatch };
+export const publishPlaybackSnapshot = (
+  update: PlaybackSnapshotUpdate,
+  options: PublishPlaybackSnapshotOptions = {}
+) => {
+  const observedAtMs = options.observedAtMs ?? Date.now();
+  const baseSnapshot =
+    options.projectBeforeUpdate === false
+      ? playbackSnapshot
+      : projectPlaybackSnapshot(playbackSnapshot, observedAtMs);
+  const patch = typeof update === "function" ? update(baseSnapshot) : update;
+  const proposedSnapshot = { ...baseSnapshot, ...patch };
+  const proposedChangedKeys = getChangedKeys(
+    baseSnapshot,
+    proposedSnapshot
+  ).filter((key) => key !== "updatedAtMs");
+  const changesPlaybackAnchor = proposedChangedKeys.some(
+    (key) => anchorKeys.has(key) || queueKeys.has(key)
+  );
+
+  if (proposedChangedKeys.length === 0) {
+    return commitPlaybackSnapshot(baseSnapshot, false);
+  }
 
   if (
-    timestampedPatch.queue &&
-    timestampedPatch.queue !== playbackSnapshot.queue &&
-    timestampedPatch.queueRevision === undefined
+    patch.queue &&
+    patch.queue !== baseSnapshot.queue &&
+    patch.queueRevision === undefined
   ) {
-    nextSnapshot.queueRevision = playbackSnapshot.queueRevision + 1;
+    proposedSnapshot.queueRevision = baseSnapshot.queueRevision + 1;
   }
 
-  if (!hasSnapshotChanged(nextSnapshot)) {
-    return playbackSnapshot;
-  }
+  proposedSnapshot.positionRate =
+    proposedSnapshot.playWhenReady === true &&
+    proposedSnapshot.playbackState === State.Playing
+      ? 1
+      : 0;
+  proposedSnapshot.updatedAtMs =
+    patch.updatedAtMs ??
+    (changesPlaybackAnchor ? observedAtMs : baseSnapshot.updatedAtMs);
 
-  playbackSnapshot = nextSnapshot;
-  queuePlaybackSnapshotPersistence(timestampedPatch, nextSnapshot);
-  emitPlaybackSnapshotChange();
-  return playbackSnapshot;
+  return commitPlaybackSnapshot(proposedSnapshot, options.persist !== false);
 };
 
 export const publishProjectedPlaybackSnapshot = (nowMs = Date.now()) =>
-  publishPlaybackSnapshot((snapshot) =>
-    projectPlaybackSnapshot(snapshot, nowMs)
+  commitPlaybackSnapshot(
+    projectPlaybackSnapshot(playbackSnapshot, nowMs),
+    false
   );
 
 export const flushPlaybackSnapshot = () => {
-  const projectedSnapshot = projectPlaybackSnapshot(
-    playbackSnapshot,
-    Date.now()
+  const nowMs = Date.now();
+  commitPlaybackSnapshot(
+    projectPlaybackSnapshot(playbackSnapshot, nowMs),
+    false
   );
+  return persistPlaybackAnchor(playbackSnapshot, true);
+};
 
-  if (hasSnapshotChanged(projectedSnapshot)) {
-    playbackSnapshot = projectedSnapshot;
-    emitPlaybackSnapshotChange();
-  }
+const migratePlaybackSnapshotV1 = async (
+  snapshot: PersistedPlaybackSnapshotV1
+) => {
+  const migratedSnapshot: PlaybackSnapshot = {
+    ...initialPlaybackSnapshot,
+    ...snapshot,
+    positionRate:
+      snapshot.playWhenReady === true &&
+      snapshot.playbackState === State.Playing
+        ? 1
+        : 0,
+  };
+  const anchorJson = JSON.stringify(
+    toPersistedPlaybackAnchor(migratedSnapshot)
+  );
+  const queueJson = JSON.stringify(toPersistedPlaybackQueue(migratedSnapshot));
 
-  return persistPlaybackSnapshot(playbackSnapshot, true);
+  await AsyncStorage.multiSet([
+    [playbackAnchorStorageKey, anchorJson],
+    [playbackQueueStorageKey, queueJson],
+  ]);
+  await AsyncStorage.removeItem(playbackSnapshotStorageKeyV1);
+  lastPersistedAnchorJson = anchorJson;
+  lastPersistedQueueJson = queueJson;
+  return migratedSnapshot;
 };
 
 export const hydratePlaybackSnapshot = () => {
-  hydrationPromise ??= AsyncStorage.getItem(playbackSnapshotStorageKey)
-    .then((snapshotJson) => {
-      if (!snapshotJson) {
+  hydrationPromise ??= AsyncStorage.multiGet([
+    playbackAnchorStorageKey,
+    playbackQueueStorageKey,
+    playbackSnapshotStorageKeyV1,
+  ])
+    .then(async (entries) => {
+      const values = new Map(entries);
+      const anchorJson = values.get(playbackAnchorStorageKey);
+      const queueJson = values.get(playbackQueueStorageKey);
+      const snapshotV1Json = values.get(playbackSnapshotStorageKeyV1);
+      let anchor = anchorJson
+        ? getPersistedPlaybackAnchor(JSON.parse(anchorJson))
+        : null;
+      let queue = queueJson
+        ? getPersistedPlaybackQueue(JSON.parse(queueJson))
+        : null;
+
+      if (!(anchor && queue) && snapshotV1Json) {
+        const snapshotV1 = getPersistedPlaybackSnapshotV1(
+          JSON.parse(snapshotV1Json)
+        );
+        if (snapshotV1) {
+          const migratedSnapshot = await migratePlaybackSnapshotV1(snapshotV1);
+          anchor = toPersistedPlaybackAnchor(migratedSnapshot);
+          queue = toPersistedPlaybackQueue(migratedSnapshot);
+        }
+      }
+
+      if (
+        !(anchor && queue) ||
+        playbackSnapshot.queue.length > 0 ||
+        playbackSnapshot.activeTrackId
+      ) {
         return;
       }
 
-      const persistedSnapshot = getPersistedPlaybackSnapshot(
-        JSON.parse(snapshotJson)
-      );
-      if (!persistedSnapshot) {
-        return;
-      }
-
-      if (playbackSnapshot.queue.length > 0 || playbackSnapshot.activeTrackId) {
-        return;
-      }
-
-      lastPersistedSnapshotJson = JSON.stringify(persistedSnapshot);
-      publishPlaybackSnapshot({
-        ...persistedSnapshot,
+      const hydratedSnapshot: PlaybackSnapshot = {
+        ...playbackSnapshot,
+        ...queue,
+        ...anchor,
         error: null,
-      });
+        playbackState:
+          anchor.playbackState === State.Ended ? State.Ended : State.Stopped,
+        playWhenReady: false,
+        positionRate: 0,
+      };
+      lastPersistedAnchorJson =
+        anchorJson ??
+        JSON.stringify(toPersistedPlaybackAnchor(hydratedSnapshot));
+      lastPersistedQueueJson =
+        queueJson ?? JSON.stringify(toPersistedPlaybackQueue(hydratedSnapshot));
+      commitPlaybackSnapshot(hydratedSnapshot, false);
     })
-    .catch(() => {
-      // A corrupt snapshot should not block app startup.
-    });
+    .catch(() => undefined);
 
   return hydrationPromise;
+};
+
+export const restoreStoppedPlaybackSnapshot = (
+  stoppedSnapshot: StoppedPlaybackSnapshot
+) => {
+  if (stoppedSnapshot.capturedAtMs <= playbackSnapshot.updatedAtMs) {
+    return playbackSnapshot;
+  }
+
+  const trackIndex = stoppedSnapshot.activeTrackId
+    ? getTrackIndexById(playbackSnapshot.queue, stoppedSnapshot.activeTrackId)
+    : -1;
+  const activeIndex =
+    trackIndex >= 0
+      ? trackIndex
+      : Math.min(
+          Math.max(
+            stoppedSnapshot.activeIndex ?? playbackSnapshot.activeIndex,
+            0
+          ),
+          Math.max(playbackSnapshot.queue.length - 1, 0)
+        );
+  const activeTrack = playbackSnapshot.queue[activeIndex];
+  const durationMs =
+    Math.round(stoppedSnapshot.duration * 1000) ||
+    activeTrack?.durationMs ||
+    playbackSnapshot.durationMs;
+
+  return publishPlaybackSnapshot(
+    {
+      activeIndex,
+      activeTrackId: activeTrack?.id ?? stoppedSnapshot.activeTrackId ?? null,
+      durationMs,
+      error: null,
+      playbackState: State.Stopped,
+      playWhenReady: false,
+      positionRate: 0,
+      progressMs: Math.min(
+        Math.max(0, Math.round(stoppedSnapshot.position * 1000)),
+        durationMs || Number.POSITIVE_INFINITY
+      ),
+    },
+    {
+      observedAtMs: stoppedSnapshot.capturedAtMs,
+      projectBeforeUpdate: false,
+    }
+  );
 };
 
 export const setPlaybackSnapshotActiveTrackEventsSuppressed = (
@@ -552,101 +713,70 @@ const getResolvedEventTrack = (
 };
 
 const publishActiveTrackChanged = (
-  event: EventPayloadByEventWithType[Event.PlaybackActiveTrackChanged]
+  event: EventPayloadByEventWithType[Event.PlaybackActiveTrackChanged],
+  observedAtMs: number
 ) => {
   if (suppressActiveTrackEvents) {
     return;
   }
 
-  publishPlaybackSnapshot((snapshot) => {
-    const eventTrack = getResolvedEventTrack(
-      snapshot,
-      event.index,
-      event.track
-    );
-
-    if (!eventTrack) {
-      return { error: null };
-    }
-
-    if (
-      !shouldUpdateIndexOnTrackChange(
-        eventTrack.activeIndex,
+  publishPlaybackSnapshot(
+    (snapshot) => {
+      const eventTrack = getResolvedEventTrack(
         snapshot,
-        event.track,
-        event.lastIndex,
-        event.lastPosition
-      )
-    ) {
-      return { error: null };
-    }
+        event.index,
+        event.track
+      );
 
-    return {
-      activeIndex: eventTrack.activeIndex,
-      activeTrackId: eventTrack.activeTrackId,
-      durationMs: eventTrack.durationMs,
-      error: null,
-      progressMs: 0,
-    };
-  });
-};
+      if (
+        !(
+          eventTrack &&
+          shouldUpdateIndexOnTrackChange(
+            eventTrack.activeIndex,
+            snapshot,
+            event.track,
+            event.lastIndex,
+            event.lastPosition
+          )
+        )
+      ) {
+        return { error: null };
+      }
 
-const publishProgressUpdated = (
-  event: EventPayloadByEventWithType[Event.PlaybackProgressUpdated]
-) => {
-  publishPlaybackSnapshot((snapshot) => {
-    const eventTrack = getResolvedEventTrack(snapshot, event.track, undefined);
-    const fallbackDurationMs =
-      eventTrack?.durationMs ||
-      getPlaybackSnapshotActiveTrack(snapshot)?.durationMs ||
-      0;
-    const playbackState =
-      snapshot.playbackState === undefined ||
-      snapshot.playbackState === State.None ||
-      snapshot.playbackState === State.Stopped
-        ? State.Playing
-        : snapshot.playbackState;
-
-    return {
-      activeIndex: eventTrack?.activeIndex ?? snapshot.activeIndex,
-      activeTrackId: eventTrack?.activeTrackId ?? snapshot.activeTrackId,
-      durationMs: getDurationMs(event.duration, fallbackDurationMs),
-      playbackState,
-      playWhenReady: true,
-      progressMs: getProgressMs(event.position),
-    };
-  });
+      return {
+        activeIndex: eventTrack.activeIndex,
+        activeTrackId: eventTrack.activeTrackId,
+        durationMs: eventTrack.durationMs,
+        error: null,
+        progressMs: 0,
+      };
+    },
+    { observedAtMs }
+  );
 };
 
 const publishQueueEnded = (
-  event: EventPayloadByEventWithType[Event.PlaybackQueueEnded]
+  event: EventPayloadByEventWithType[Event.PlaybackQueueEnded],
+  observedAtMs: number
 ) => {
-  publishPlaybackSnapshot((snapshot) => {
-    const endedTrack =
-      event.track >= 0 && event.track < snapshot.queue.length
-        ? snapshot.queue[event.track]
-        : null;
+  publishPlaybackSnapshot(
+    (snapshot) => {
+      const endedTrack =
+        event.track >= 0 && event.track < snapshot.queue.length
+          ? snapshot.queue[event.track]
+          : null;
 
-    return {
-      activeIndex: endedTrack ? event.track : snapshot.activeIndex,
-      activeTrackId: endedTrack?.id ?? snapshot.activeTrackId,
-      durationMs: endedTrack?.durationMs ?? snapshot.durationMs,
-      playWhenReady: false,
-      progressMs: endedTrack?.durationMs ?? snapshot.progressMs,
-    };
-  });
-};
-
-const publishPlaybackState = (
-  event: EventPayloadByEventWithType[Event.PlaybackState]
-) => {
-  publishPlaybackSnapshot((snapshot) => ({
-    playbackState: event.state,
-    progressMs:
-      event.state === State.None || event.state === State.Stopped
-        ? 0
-        : snapshot.progressMs,
-  }));
+      return {
+        activeIndex: endedTrack ? event.track : snapshot.activeIndex,
+        activeTrackId: endedTrack?.id ?? snapshot.activeTrackId,
+        durationMs: endedTrack?.durationMs ?? snapshot.durationMs,
+        playbackState: State.Ended,
+        playWhenReady: false,
+        progressMs: endedTrack?.durationMs ?? snapshot.progressMs,
+      };
+    },
+    { observedAtMs }
+  );
 };
 
 const getPlaybackSnapshotEventKey = (event: PlaybackSnapshotEvent) => {
@@ -658,10 +788,6 @@ const getPlaybackSnapshotEventKey = (event: PlaybackSnapshotEvent) => {
       event.lastIndex,
       event.lastPosition,
     ].join(":");
-  }
-
-  if (event.type === Event.PlaybackProgressUpdated) {
-    return [event.type, event.track, event.position, event.duration].join(":");
   }
 
   if (event.type === Event.PlaybackState) {
@@ -700,33 +826,37 @@ export const publishPlaybackSnapshotEvent = (event: PlaybackSnapshotEvent) => {
     return;
   }
 
+  const observedAtMs = Date.now();
   if (event.type === Event.PlaybackActiveTrackChanged) {
-    publishActiveTrackChanged(event);
-    return;
-  }
-
-  if (event.type === Event.PlaybackProgressUpdated) {
-    publishProgressUpdated(event);
+    publishActiveTrackChanged(event, observedAtMs);
     return;
   }
 
   if (event.type === Event.PlaybackState) {
-    publishPlaybackState(event);
+    publishPlaybackSnapshot(
+      {
+        playbackState: event.state,
+      },
+      { observedAtMs }
+    );
     return;
   }
 
   if (event.type === Event.PlaybackPlayWhenReadyChanged) {
-    publishPlaybackSnapshot({ playWhenReady: event.playWhenReady });
+    publishPlaybackSnapshot(
+      { playWhenReady: event.playWhenReady },
+      { observedAtMs }
+    );
     return;
   }
 
   if (event.type === Event.PlaybackError) {
-    publishPlaybackSnapshot({ error: event.message });
+    publishPlaybackSnapshot({ error: event.message }, { persist: false });
     return;
   }
 
   if (event.type === Event.PlaybackQueueEnded) {
-    publishQueueEnded(event);
+    publishQueueEnded(event, observedAtMs);
   }
 };
 

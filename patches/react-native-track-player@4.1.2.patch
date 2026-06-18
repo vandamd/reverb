@@ -1,36 +1,36 @@
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index b2409a0..e0c9f42 100644
+index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..a70e667d6b8412cf4965b9999542e690bbe61d4c 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 @@ -251,7 +251,8 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
      }
- 
+
      @ReactMethod
 -    fun updateOptions(data: ReadableMap?, callback: Promise) = scope.launch {
 +    fun updateOptions(data: ReadableMap?, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          val options = Arguments.toBundle(data)
 @@ -262,9 +263,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun add(data: ReadableArray?, insertBeforeIndex: Int, callback: Promise) = scope.launch {
 +    fun add(data: ReadableArray?, insertBeforeIndex: Int, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          try {
 @@ -283,9 +286,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
              rejectWithException(callback, exception)
          }
      }
 +    }
- 
+
      @ReactMethod
 -    fun load(data: ReadableMap?, callback: Promise) = scope.launch {
 +    fun load(data: ReadableMap?, callback: Promise) {
@@ -43,7 +43,7 @@ index b2409a0..e0c9f42 100644
          }
      }
 +    }
- 
+
      @ReactMethod
 -    fun move(fromIndex: Int, toIndex: Int, callback: Promise) = scope.launch {
 +    fun move(fromIndex: Int, toIndex: Int, callback: Promise) {
@@ -53,7 +53,7 @@ index b2409a0..e0c9f42 100644
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun remove(data: ReadableArray?, callback: Promise) = scope.launch {
 +    fun remove(data: ReadableArray?, callback: Promise) {
@@ -66,264 +66,264 @@ index b2409a0..e0c9f42 100644
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun updateMetadataForTrack(index: Int, map: ReadableMap?, callback: Promise) =
 +    fun updateMetadataForTrack(index: Int, map: ReadableMap?, callback: Promise) {
          scope.launch {
              if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
 @@ -346,9 +356,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                  callback.resolve(null)
              }
          }
 +    }
- 
+
      @ReactMethod
 -    fun updateNowPlayingMetadata(map: ReadableMap?, callback: Promise) = scope.launch {
 +    fun updateNowPlayingMetadata(map: ReadableMap?, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          if (musicService.tracks.isEmpty())
 @@ -362,9 +374,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun clearNowPlayingMetadata(callback: Promise) = scope.launch {
 +    fun clearNowPlayingMetadata(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          if (musicService.tracks.isEmpty())
 @@ -373,17 +387,21 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          musicService.clearNotificationMetadata()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun removeUpcomingTracks(callback: Promise) = scope.launch {
 +    fun removeUpcomingTracks(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.removeUpcomingTracks()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun skip(index: Int, initialTime: Float, callback: Promise) = scope.launch {
 +    fun skip(index: Int, initialTime: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.skip(index)
 @@ -394,9 +412,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun skipToNext(initialTime: Float, callback: Promise) = scope.launch {
 +    fun skipToNext(initialTime: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.skipToNext()
 @@ -407,9 +427,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun skipToPrevious(initialTime: Float, callback: Promise) = scope.launch {
 +    fun skipToPrevious(initialTime: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.skipToPrevious()
 @@ -420,9 +442,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun reset(callback: Promise) = scope.launch {
 +    fun reset(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.stop()
 @@ -431,135 +455,169 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
- 
+
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun play(callback: Promise) = scope.launch {
 +    fun play(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.play()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun pause(callback: Promise) = scope.launch {
 +    fun pause(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.pause()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun stop(callback: Promise) = scope.launch {
 +    fun stop(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.stop()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun seekTo(seconds: Float, callback: Promise) = scope.launch {
 +    fun seekTo(seconds: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.seekTo(seconds)
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun seekBy(offset: Float, callback: Promise) = scope.launch {
 +    fun seekBy(offset: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.seekBy(offset)
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun retry(callback: Promise) = scope.launch {
 +    fun retry(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.retry()
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun setVolume(volume: Float, callback: Promise) = scope.launch {
 +    fun setVolume(volume: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.setVolume(volume)
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun getVolume(callback: Promise) = scope.launch {
 +    fun getVolume(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getVolume())
      }
 +    }
- 
+
      @ReactMethod
 -    fun setRate(rate: Float, callback: Promise) = scope.launch {
 +    fun setRate(rate: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.setRate(rate)
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun getRate(callback: Promise) = scope.launch {
 +    fun getRate(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getRate())
      }
 +    }
- 
+
      @ReactMethod
 -    fun setRepeatMode(mode: Int, callback: Promise) = scope.launch {
 +    fun setRepeatMode(mode: Int, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.setRepeatMode(RepeatMode.fromOrdinal(mode))
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun getRepeatMode(callback: Promise) = scope.launch {
 +    fun getRepeatMode(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getRepeatMode().ordinal)
      }
 +    }
- 
+
      @ReactMethod
 -    fun setPlayWhenReady(playWhenReady: Boolean, callback: Promise) = scope.launch {
 +    fun setPlayWhenReady(playWhenReady: Boolean, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          musicService.playWhenReady = playWhenReady
          callback.resolve(null)
      }
 +    }
- 
+
      @ReactMethod
 -    fun getPlayWhenReady(callback: Promise) = scope.launch {
 +    fun getPlayWhenReady(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.playWhenReady)
      }
 +    }
- 
+
      @ReactMethod
 -    fun getTrack(index: Int, callback: Promise) = scope.launch {
 +    fun getTrack(index: Int, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          if (index >= 0 && index < musicService.tracks.size) {
 -            callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))
 +            callback.resolve(musicService.tracks[index].originalItem?.let(Arguments::fromBundle))
@@ -332,30 +332,30 @@ index b2409a0..e0c9f42 100644
          }
      }
 +    }
- 
+
      @ReactMethod
 -    fun getQueue(callback: Promise) = scope.launch {
 +    fun getQueue(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(Arguments.fromList(musicService.tracks.map { it.originalItem }))
      }
 +    }
- 
+
      @ReactMethod
 -    fun setQueue(data: ReadableArray?, callback: Promise) = scope.launch {
 +    fun setQueue(data: ReadableArray?, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          try {
-@@ -570,49 +628,91 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -570,49 +628,101 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
              rejectWithException(callback, exception)
          }
      }
 +    }
- 
+
      @ReactMethod
 -    fun getActiveTrackIndex(callback: Promise) = scope.launch {
 +    fun getActiveTrackIndex(callback: Promise) {
@@ -366,7 +366,7 @@ index b2409a0..e0c9f42 100644
          )
      }
 +    }
- 
+
      @ReactMethod
 -    fun getActiveTrack(callback: Promise) = scope.launch {
 +    fun getActiveTrack(callback: Promise) {
@@ -381,9 +381,8 @@ index b2409a0..e0c9f42 100644
          )
      }
 +    }
- 
-     @ReactMethod
--    fun getDuration(callback: Promise) = scope.launch {
++
++    @ReactMethod
 +    fun getNowPlayingSnapshot(callback: Promise) {
 +        scope.launch {
 +        if (verifyServiceBoundOrReject(callback)) return@launch
@@ -410,8 +409,19 @@ index b2409a0..e0c9f42 100644
 +        snapshot.putMap("playbackState", Arguments.fromBundle(musicService.getPlayerStateBundle(musicService.state)))
 +        snapshot.putBoolean("playWhenReady", musicService.playWhenReady)
 +        snapshot.putInt("queueLength", musicService.tracks.size)
++        snapshot.putDouble("capturedAtMs", System.currentTimeMillis().toDouble())
++        snapshot.putBoolean("isPositionAdvancing", musicService.isPlaying)
 +
 +        callback.resolve(snapshot)
++    }
++    }
+
+     @ReactMethod
+-    fun getDuration(callback: Promise) = scope.launch {
++    fun getLastStoppedSnapshot(callback: Promise) {
++        scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++        callback.resolve(musicService.getLastStoppedSnapshot()?.let(Arguments::fromBundle))
 +    }
 +    }
 +
@@ -419,31 +429,31 @@ index b2409a0..e0c9f42 100644
 +    fun getDuration(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getDurationInSeconds())
      }
 +    }
- 
+
      @ReactMethod
 -    fun getBufferedPosition(callback: Promise) = scope.launch {
 +    fun getBufferedPosition(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getBufferedPositionInSeconds())
      }
 +    }
- 
+
      @ReactMethod
 -    fun getPosition(callback: Promise) = scope.launch {
 +    fun getPosition(callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
- 
+
          callback.resolve(musicService.getPositionInSeconds())
      }
 +    }
- 
+
      @ReactMethod
 -    fun getProgress(callback: Promise) = scope.launch {
 +    fun getProgress(callback: Promise) {
@@ -451,12 +461,12 @@ index b2409a0..e0c9f42 100644
          if (verifyServiceBoundOrReject(callback)) return@launch
          var bundle = Bundle()
          bundle.putDouble("duration", musicService.getDurationInSeconds());
-@@ -620,10 +720,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -620,10 +730,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          bundle.putDouble("buffered", musicService.getBufferedPositionInSeconds());
          callback.resolve(Arguments.fromBundle(bundle))
      }
 +    }
- 
+
      @ReactMethod
 -    fun getPlaybackState(callback: Promise) = scope.launch {
 +    fun getPlaybackState(callback: Promise) {
@@ -467,11 +477,104 @@ index b2409a0..e0c9f42 100644
 +    }
  }
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index afa6b0f..c417e7b 100644
+index afa6b0f335714de0cc8741d5bbdd51b4e04bb3bb..69c0207fd6c1c07256b778794a28d1256bc1a04a 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-@@ -741,7 +741,7 @@ class MusicService : HeadlessJsTaskService() {
- 
+@@ -46,6 +46,9 @@ class MusicService : HeadlessJsTaskService() {
+     private val binder = MusicBinder()
+     private val scope = MainScope()
+     private var progressUpdateJob: Job? = null
++    private val stoppedSnapshotPreferences by lazy {
++        getSharedPreferences(STOPPED_SNAPSHOT_PREFERENCES, Context.MODE_PRIVATE)
++    }
+
+     /**
+      * Use [appKilledPlaybackBehavior] instead.
+@@ -70,6 +73,9 @@ class MusicService : HeadlessJsTaskService() {
+     val state
+         get() = player.playerState
+
++    val isPlaying
++        get() = player.isPlaying
++
+     var ratingType: Int
+         get() = player.ratingType
+         set(value) {
+@@ -327,6 +333,7 @@ class MusicService : HeadlessJsTaskService() {
+
+     @MainThread
+     fun play() {
++        clearLastStoppedSnapshot()
+         player.play()
+     }
+
+@@ -416,6 +423,64 @@ class MusicService : HeadlessJsTaskService() {
+     @MainThread
+     fun getBufferedPositionInSeconds(): Double = player.bufferedPosition.toSeconds()
+
++    @MainThread
++    fun getLastStoppedSnapshot(): Bundle? {
++        if (!stoppedSnapshotPreferences.contains(STOPPED_SNAPSHOT_CAPTURED_AT_KEY)) {
++            return null
++        }
++
++        return Bundle().apply {
++            putInt(
++                "activeIndex",
++                stoppedSnapshotPreferences.getInt(STOPPED_SNAPSHOT_INDEX_KEY, 0)
++            )
++            stoppedSnapshotPreferences.getString(STOPPED_SNAPSHOT_TRACK_ID_KEY, null)?.let {
++                putString("activeTrackId", it)
++            }
++            putDouble(
++                "position",
++                Double.fromBits(
++                    stoppedSnapshotPreferences.getLong(STOPPED_SNAPSHOT_POSITION_KEY, 0)
++                )
++            )
++            putDouble(
++                "duration",
++                Double.fromBits(
++                    stoppedSnapshotPreferences.getLong(STOPPED_SNAPSHOT_DURATION_KEY, 0)
++                )
++            )
++            putDouble(
++                "capturedAtMs",
++                stoppedSnapshotPreferences.getLong(
++                    STOPPED_SNAPSHOT_CAPTURED_AT_KEY,
++                    0
++                ).toDouble()
++            )
++        }
++    }
++
++    @MainThread
++    private fun saveLastStoppedSnapshot() {
++        if (tracks.isEmpty()) return
++
++        val activeIndex = getCurrentTrackIndex()
++        if (activeIndex !in tracks.indices) return
++
++        val activeTrackId = tracks[activeIndex].originalItem?.getString("id")
++        stoppedSnapshotPreferences.edit()
++            .putInt(STOPPED_SNAPSHOT_INDEX_KEY, activeIndex)
++            .putString(STOPPED_SNAPSHOT_TRACK_ID_KEY, activeTrackId)
++            .putLong(STOPPED_SNAPSHOT_POSITION_KEY, getPositionInSeconds().toRawBits())
++            .putLong(STOPPED_SNAPSHOT_DURATION_KEY, getDurationInSeconds().toRawBits())
++            .putLong(STOPPED_SNAPSHOT_CAPTURED_AT_KEY, System.currentTimeMillis())
++            .commit()
++    }
++
++    @MainThread
++    private fun clearLastStoppedSnapshot() {
++        stoppedSnapshotPreferences.edit().clear().commit()
++    }
++
+     @MainThread
+     fun getPlayerStateBundle(state: AudioPlayerState): Bundle {
+         val bundle = Bundle()
+@@ -741,7 +806,7 @@ class MusicService : HeadlessJsTaskService() {
+
      @MainThread
      private fun emit(event: String, data: Bundle? = null) {
 -        reactNativeHost.reactInstanceManager.currentReactContext
@@ -479,17 +582,38 @@ index afa6b0f..c417e7b 100644
              ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
              ?.emit(event, data?.let { Arguments.fromBundle(it) })
      }
-@@ -751,7 +751,7 @@ class MusicService : HeadlessJsTaskService() {
+@@ -751,7 +816,7 @@ class MusicService : HeadlessJsTaskService() {
          val payload = Arguments.createArray()
          data.forEach { payload.pushMap(Arguments.fromBundle(it)) }
- 
+
 -        reactNativeHost.reactInstanceManager.currentReactContext
 +        reactContext
              ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
              ?.emit(event, payload)
      }
+@@ -774,6 +839,7 @@ class MusicService : HeadlessJsTaskService() {
+         when (appKilledPlaybackBehavior) {
+             AppKilledPlaybackBehavior.PAUSE_PLAYBACK -> player.pause()
+             AppKilledPlaybackBehavior.STOP_PLAYBACK_AND_REMOVE_NOTIFICATION -> {
++                saveLastStoppedSnapshot()
+                 player.clear()
+                 player.stop()
+
+@@ -833,6 +899,12 @@ class MusicService : HeadlessJsTaskService() {
+         const val FORWARD_JUMP_INTERVAL_KEY = "forwardJumpInterval"
+         const val BACKWARD_JUMP_INTERVAL_KEY = "backwardJumpInterval"
+         const val PROGRESS_UPDATE_EVENT_INTERVAL_KEY = "progressUpdateEventInterval"
++        const val STOPPED_SNAPSHOT_PREFERENCES = "track_player_stopped_snapshot"
++        const val STOPPED_SNAPSHOT_INDEX_KEY = "active_index"
++        const val STOPPED_SNAPSHOT_TRACK_ID_KEY = "active_track_id"
++        const val STOPPED_SNAPSHOT_POSITION_KEY = "position"
++        const val STOPPED_SNAPSHOT_DURATION_KEY = "duration"
++        const val STOPPED_SNAPSHOT_CAPTURED_AT_KEY = "captured_at"
+
+         const val MAX_CACHE_SIZE_KEY = "maxCacheSize"
+
 diff --git a/lib/src/interfaces/Progress.d.ts b/lib/src/interfaces/Progress.d.ts
-index 77c0834..a650ddd 100644
+index 77c083433eba416b545484ff320d0e7973ac3615..31a906f08b710f3bfbeff2247d8398b8eb334ac1 100644
 --- a/lib/src/interfaces/Progress.d.ts
 +++ b/lib/src/interfaces/Progress.d.ts
 @@ -1,3 +1,5 @@
@@ -498,7 +622,7 @@ index 77c0834..a650ddd 100644
  export interface Progress {
      /**
       * The playback position of the current track in seconds.
-@@ -13,3 +15,11 @@ export interface Progress {
+@@ -13,3 +15,20 @@ export interface Progress {
       **/
      buffered: number;
  }
@@ -506,22 +630,31 @@ index 77c0834..a650ddd 100644
 +    activeIndex?: number;
 +    activeTrack?: Track;
 +    activeTrackId?: string;
++    capturedAtMs: number;
++    isPositionAdvancing: boolean;
 +    playbackState: PlaybackState;
 +    playWhenReady: boolean;
 +    queueLength: number;
 +}
++export interface LastStoppedSnapshot {
++    activeIndex?: number;
++    activeTrackId?: string;
++    capturedAtMs: number;
++    duration: number;
++    position: number;
++}
 diff --git a/lib/src/trackPlayer.d.ts b/lib/src/trackPlayer.d.ts
-index 8a6d0a9..88a6b13 100644
+index 8a6d0a92f3e4c204ae1281fad4225998f8e1eb74..32599cb2961420d38358e7028a8707f5fea50f16 100644
 --- a/lib/src/trackPlayer.d.ts
 +++ b/lib/src/trackPlayer.d.ts
 @@ -1,5 +1,5 @@
  import { Event, RepeatMode, State } from './constants';
 -import type { AddTrack, EventPayloadByEvent, NowPlayingMetadata, PlaybackState, PlayerOptions, Progress, ServiceHandler, Track, TrackMetadataBase, UpdateOptions } from './interfaces';
-+import type { AddTrack, EventPayloadByEvent, NowPlayingMetadata, NowPlayingSnapshot, PlaybackState, PlayerOptions, Progress, ServiceHandler, Track, TrackMetadataBase, UpdateOptions } from './interfaces';
++import type { AddTrack, EventPayloadByEvent, LastStoppedSnapshot, NowPlayingMetadata, NowPlayingSnapshot, PlaybackState, PlayerOptions, Progress, ServiceHandler, Track, TrackMetadataBase, UpdateOptions } from './interfaces';
  /**
   * Initializes the player with the specified options.
   *
-@@ -215,6 +215,10 @@ export declare function getActiveTrackIndex(): Promise<number | undefined>;
+@@ -215,6 +215,14 @@ export declare function getActiveTrackIndex(): Promise<number | undefined>;
   * Gets the active track or undefined if there is no current track.
   */
  export declare function getActiveTrack(): Promise<Track | undefined>;
@@ -529,14 +662,18 @@ index 8a6d0a9..88a6b13 100644
 + * Gets the native player snapshot used to synchronise now playing UI.
 + */
 +export declare function getNowPlayingSnapshot(): Promise<NowPlayingSnapshot>;
++/**
++ * Gets the last snapshot captured before Android stopped playback.
++ */
++export declare function getLastStoppedSnapshot(): Promise<LastStoppedSnapshot | undefined>;
  /**
   * Gets the index of the current track or null if there is no current track.
   *
 diff --git a/lib/src/trackPlayer.js b/lib/src/trackPlayer.js
-index 191e5de..0d582aa 100644
+index 191e5dea7ce96f145d0a2ea16d9d925136ce4454..5ff06d6263687a65ee9939e5a14e6e7592b18f55 100644
 --- a/lib/src/trackPlayer.js
 +++ b/lib/src/trackPlayer.js
-@@ -308,6 +308,18 @@ export async function getActiveTrackIndex() {
+@@ -308,6 +308,34 @@ export async function getActiveTrackIndex() {
  export async function getActiveTrack() {
      return (await TrackPlayer.getActiveTrack()) ?? undefined;
  }
@@ -552,11 +689,27 @@ index 191e5de..0d582aa 100644
 +        activeTrackId: snapshot.activeTrackId ?? undefined,
 +    };
 +}
++/**
++ * Gets the last snapshot captured before Android stopped playback.
++ */
++export async function getLastStoppedSnapshot() {
++    if (typeof TrackPlayer.getLastStoppedSnapshot !== 'function') {
++        return undefined;
++    }
++    const snapshot = await TrackPlayer.getLastStoppedSnapshot();
++    return snapshot
++        ? {
++            ...snapshot,
++            activeIndex: snapshot.activeIndex ?? undefined,
++            activeTrackId: snapshot.activeTrackId ?? undefined,
++        }
++        : undefined;
++}
  /**
   * Gets the index of the current track or null if there is no current track.
   *
 diff --git a/src/interfaces/Progress.ts b/src/interfaces/Progress.ts
-index e7a018b..edc1883 100644
+index e7a018b91ad3136e067a4fa5035483064be54324..603daec20e288b93869a0e315fa6f14d9020e573 100644
 --- a/src/interfaces/Progress.ts
 +++ b/src/interfaces/Progress.ts
 @@ -1,3 +1,6 @@
@@ -566,7 +719,7 @@ index e7a018b..edc1883 100644
  export interface Progress {
    /**
     * The playback position of the current track in seconds.
-@@ -13,3 +16,12 @@ export interface Progress {
+@@ -13,3 +16,22 @@ export interface Progress {
     **/
    buffered: number;
  }
@@ -575,23 +728,35 @@ index e7a018b..edc1883 100644
 +  activeIndex?: number;
 +  activeTrack?: Track;
 +  activeTrackId?: string;
++  capturedAtMs: number;
++  isPositionAdvancing: boolean;
 +  playbackState: PlaybackState;
 +  playWhenReady: boolean;
 +  queueLength: number;
 +}
++
++export interface LastStoppedSnapshot {
++  activeIndex?: number;
++  activeTrackId?: string;
++  capturedAtMs: number;
++  duration: number;
++  position: number;
++}
 diff --git a/src/trackPlayer.ts b/src/trackPlayer.ts
-index 6f6d723..fa283d3 100644
+index 6f6d7234979f31e4a2fdab0fdecb891f200c0892..56960dd59ba22561d2c0294162dc00eb460d60ee 100644
 --- a/src/trackPlayer.ts
 +++ b/src/trackPlayer.ts
-@@ -11,6 +11,7 @@ import type {
+@@ -10,7 +10,9 @@ import { Event, RepeatMode, State } from './constants';
+ import type {
    AddTrack,
    EventPayloadByEvent,
++  LastStoppedSnapshot,
    NowPlayingMetadata,
 +  NowPlayingSnapshot,
    PlaybackState,
    PlayerOptions,
    Progress,
-@@ -436,6 +437,19 @@ export async function getActiveTrack(): Promise<Track | undefined> {
+@@ -436,6 +438,39 @@ export async function getActiveTrack(): Promise<Track | undefined> {
    return (await TrackPlayer.getActiveTrack()) ?? undefined;
  }
 
@@ -606,6 +771,26 @@ index 6f6d723..fa283d3 100644
 +    activeTrack: snapshot.activeTrack ?? undefined,
 +    activeTrackId: snapshot.activeTrackId ?? undefined,
 +  };
++}
++
++/**
++ * Gets the last snapshot captured before Android stopped playback.
++ */
++export async function getLastStoppedSnapshot(): Promise<
++  LastStoppedSnapshot | undefined
++> {
++  if (typeof TrackPlayer.getLastStoppedSnapshot !== 'function') {
++    return undefined;
++  }
++
++  const snapshot = await TrackPlayer.getLastStoppedSnapshot();
++  return snapshot
++    ? {
++        ...snapshot,
++        activeIndex: snapshot.activeIndex ?? undefined,
++        activeTrackId: snapshot.activeTrackId ?? undefined,
++      }
++    : undefined;
 +}
 +
  /**

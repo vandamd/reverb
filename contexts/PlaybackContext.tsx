@@ -17,7 +17,6 @@ import TrackPlayer, {
   State,
   type Track,
   RepeatMode as TrackPlayerRepeatMode,
-  useTrackPlayerEvents,
 } from "react-native-track-player";
 import {
   flushPlaybackSnapshot,
@@ -27,10 +26,9 @@ import {
   getTrackId,
   hydratePlaybackSnapshot,
   type PlaybackSnapshot,
-  playbackSnapshotEvents,
   publishPlaybackSnapshot,
-  publishPlaybackSnapshotEvent,
   publishProjectedPlaybackSnapshot,
+  restoreStoppedPlaybackSnapshot,
   setPlaybackSnapshotActiveTrackEventsSuppressed,
   subscribePlaybackSnapshot,
   trackPlayerPlayingStates,
@@ -175,7 +173,6 @@ const setupTrackPlayer = () =>
         Capability.SkipToPrevious,
         Capability.SeekTo,
       ],
-      progressUpdateEventInterval: 1,
     });
   })().catch((error) => {
     playerSetupPromise = null;
@@ -433,6 +430,7 @@ const getOptimisticPlaybackState = (
 
 const getRepairSnapshotPatch = (snapshot: {
   currentSnapshot: PlaybackSnapshot;
+  isPositionAdvancing: boolean;
   nativePlaybackState: State;
   nativePlayWhenReady: boolean;
   nativeProgress: Pick<NowPlayingSnapshot, "duration" | "position">;
@@ -463,6 +461,7 @@ const getRepairSnapshotPatch = (snapshot: {
     error: null,
     playbackState: snapshot.nativePlaybackState,
     playWhenReady: snapshot.nativePlayWhenReady,
+    positionRate: snapshot.isPositionAdvancing ? 1 : 0,
     progressMs: isStopped
       ? 0
       : clampProgressMs(
@@ -521,10 +520,34 @@ function usePlaybackProviderValues() {
       await ensureTrackPlayerReady();
 
       const nativeSnapshot = await TrackPlayer.getNowPlayingSnapshot();
-      const receivedAtMs = Date.now();
+      const receivedAtMs = nativeSnapshot.capturedAtMs ?? Date.now();
       const currentSnapshot = getPlaybackSnapshot();
       const nativeActiveTrackId =
         nativeSnapshot.activeTrackId ?? getTrackId(nativeSnapshot.activeTrack);
+
+      if (
+        nativeSnapshot.queueLength === 0 ||
+        (nativeActiveTrackId === null &&
+          nativeSnapshot.activeIndex === undefined)
+      ) {
+        publishPlaybackSnapshot(
+          {
+            error: null,
+            playbackState:
+              currentSnapshot.queue.length > 0
+                ? State.Stopped
+                : nativeSnapshot.playbackState.state,
+            playWhenReady: false,
+            positionRate: 0,
+          },
+          {
+            observedAtMs: receivedAtMs,
+            projectBeforeUpdate: false,
+          }
+        );
+        return;
+      }
+
       let target = getLocalRepairTarget(
         currentSnapshot,
         nativeActiveTrackId,
@@ -548,16 +571,24 @@ function usePlaybackProviderValues() {
           ) ?? target;
       }
 
-      publishPlaybackSnapshot({
-        ...getRepairSnapshotPatch({
-          currentSnapshot,
-          nativePlaybackState: nativeSnapshot.playbackState.state,
-          nativePlayWhenReady: nativeSnapshot.playWhenReady,
-          nativeProgress: nativeSnapshot,
-          target,
-        }),
-        updatedAtMs: receivedAtMs,
-      });
+      publishPlaybackSnapshot(
+        {
+          ...getRepairSnapshotPatch({
+            currentSnapshot,
+            isPositionAdvancing:
+              nativeSnapshot.isPositionAdvancing ??
+              nativeSnapshot.playbackState.state === State.Playing,
+            nativePlaybackState: nativeSnapshot.playbackState.state,
+            nativePlayWhenReady: nativeSnapshot.playWhenReady,
+            nativeProgress: nativeSnapshot,
+            target,
+          }),
+        },
+        {
+          observedAtMs: receivedAtMs,
+          projectBeforeUpdate: false,
+        }
+      );
     } catch (syncError) {
       if (isPlayerNotReadyError(syncError)) {
         playerSetupPromise = null;
@@ -707,6 +738,7 @@ function usePlaybackProviderValues() {
 
   useEffect(() => {
     let isMounted = true;
+    let foregroundSyncPending = false;
     const projectThenReconcile = () => {
       projectPlaybackSnapshotNow();
       reconcilePlaybackSnapshotFromNative().catch(publishPlaybackError);
@@ -715,29 +747,51 @@ function usePlaybackProviderValues() {
       projectPlaybackSnapshotNow();
       flushPlaybackSnapshot().catch(publishPlaybackError);
     };
-
-    hydratePlaybackSnapshot()
-      .then(() => {
-        if (isMounted && AppState.currentState === "active") {
-          projectThenReconcile();
+    const initialisationPromise = hydratePlaybackSnapshot().then(async () => {
+      await ensureTrackPlayerReady();
+      try {
+        const stoppedSnapshot = await TrackPlayer.getLastStoppedSnapshot();
+        if (stoppedSnapshot) {
+          restoreStoppedPlaybackSnapshot(stoppedSnapshot);
         }
-      })
-      .catch(publishPlaybackError);
+      } catch {
+        // The shutdown checkpoint is Android-only.
+      }
+    });
+    const syncForegroundWhenReady = () => {
+      if (foregroundSyncPending) {
+        return;
+      }
 
-    if (AppState.currentState === "active") {
-      projectThenReconcile();
-    }
+      foregroundSyncPending = true;
+      initialisationPromise
+        .then(() => {
+          if (isMounted && AppState.currentState === "active") {
+            projectThenReconcile();
+          }
+        })
+        .catch(publishPlaybackError)
+        .finally(() => {
+          foregroundSyncPending = false;
+        });
+    };
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        projectThenReconcile();
+        syncForegroundWhenReady();
         return;
       }
 
       if (nextState === "inactive" || nextState === "background") {
-        projectThenFlush();
+        initialisationPromise
+          .then(projectThenFlush)
+          .catch(publishPlaybackError);
       }
     });
+
+    if (AppState.currentState === "active") {
+      syncForegroundWhenReady();
+    }
 
     return () => {
       isMounted = false;
@@ -767,10 +821,6 @@ function usePlaybackProviderValues() {
       // Prefetching is only a visual warm-up; playback should never care.
     });
   }, [snapshot.activeIndex, snapshot.activeTrackId, snapshot.queue]);
-
-  useTrackPlayerEvents(playbackSnapshotEvents, (event) => {
-    publishPlaybackSnapshotEvent(event);
-  });
 
   const playQueue = useCallback(
     async (tracks: LocalTrack[], nextIndex = 0) => {

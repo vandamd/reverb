@@ -6,6 +6,7 @@ export interface ProjectablePlaybackSnapshot<TPlaybackState> {
   durationMs: number;
   playbackState: TPlaybackState | undefined;
   playWhenReady: boolean | undefined;
+  positionRate: 0 | 1;
   progressMs: number;
   queue: LocalTrack[];
   repeatMode: RepeatMode;
@@ -14,7 +15,6 @@ export interface ProjectablePlaybackSnapshot<TPlaybackState> {
 
 interface PlaybackProjectionOptions<TPlaybackState> {
   endedState: TPlaybackState;
-  playingStates: ReadonlySet<TPlaybackState>;
 }
 
 const getTrackIndexById = (queue: LocalTrack[], trackId: string | null) =>
@@ -94,13 +94,7 @@ export const projectPlaybackSnapshot = <
   const activeIndex = getPlaybackSnapshotTrackIndex(snapshot);
   const activeTrack = snapshot.queue[activeIndex];
 
-  if (
-    elapsedMs <= 0 ||
-    snapshot.playWhenReady !== true ||
-    snapshot.playbackState === undefined ||
-    !options.playingStates.has(snapshot.playbackState) ||
-    !activeTrack
-  ) {
+  if (elapsedMs <= 0 || snapshot.positionRate !== 1 || !activeTrack) {
     return { ...snapshot, updatedAtMs: nowMs };
   }
 
