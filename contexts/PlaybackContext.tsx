@@ -10,28 +10,22 @@ import {
   useSyncExternalStore,
 } from "react";
 import { AppState } from "react-native";
-import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Capability,
-  type NowPlayingSnapshot,
-  State,
-  type Track,
-  RepeatMode as TrackPlayerRepeatMode,
-} from "react-native-track-player";
+import type {
+  NativePlaybackSnapshot,
+  NativePlaybackTrack,
+} from "@/modules/reverb-player/src/ReverbPlayer.types";
+import ReverbPlayer from "@/modules/reverb-player/src/ReverbPlayerModule";
 import {
   flushPlaybackSnapshot,
   getPlaybackSnapshot,
   getPlaybackSnapshotActiveTrack,
   getPlaybackSnapshotTrackIndex,
-  getTrackId,
   hydratePlaybackSnapshot,
   type PlaybackSnapshot,
   publishPlaybackSnapshot,
   publishProjectedPlaybackSnapshot,
   restoreStoppedPlaybackSnapshot,
-  setPlaybackSnapshotActiveTrackEventsSuppressed,
   subscribePlaybackSnapshot,
-  trackPlayerPlayingStates,
 } from "@/services/playbackSnapshotStore";
 import type { LocalTrack, RepeatMode } from "@/types/music";
 
@@ -87,139 +81,23 @@ const PlaybackControlsContext = createContext<
   | undefined
 >(undefined);
 
-const restartTrackThresholdMs = 3000;
-let playerSetupPromise: Promise<void> | null = null;
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 
-const getErrorCode = (error: unknown) => {
-  if (typeof error === "object" && error && "code" in error) {
-    return String(error.code);
-  }
-  return "";
-};
-
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "object" && error && "message" in error) {
-    return String(error.message);
-  }
-  return String(error);
-};
-
-const isPlayerAlreadySetupError = (error: unknown) => {
-  const code = getErrorCode(error);
-  const message = getErrorMessage(error).toLowerCase();
-  return (
-    code === "player_already_initialized" ||
-    (message.includes("already") && message.includes("setupplayer"))
-  );
-};
-
-const isPlayerNotReadyError = (error: unknown) => {
-  const code = getErrorCode(error);
-  const message = getErrorMessage(error).toLowerCase();
-  return (
-    code === "player_not_initialized" ||
-    code === "android_cannot_setup_player_in_background" ||
-    message.includes("not initialized") ||
-    message.includes("setupplayer first") ||
-    message.includes("must be in the foreground")
-  );
-};
-
-const createBackgroundSetupError = () =>
-  new Error("TrackPlayer setup is only available while the app is active.");
-
-const setupTrackPlayer = () =>
-  (async () => {
-    if (AppState.currentState !== "active") {
-      throw createBackgroundSetupError();
-    }
-
-    try {
-      await TrackPlayer.setupPlayer({
-        autoHandleInterruptions: true,
-      });
-    } catch (setupError) {
-      if (!isPlayerAlreadySetupError(setupError)) {
-        throw setupError;
-      }
-    }
-
-    await TrackPlayer.updateOptions({
-      android: {
-        appKilledPlaybackBehavior:
-          AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-      },
-      capabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.Stop,
-        Capability.SkipToNext,
-        Capability.SkipToPrevious,
-        Capability.SeekTo,
-      ],
-      compactCapabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.SkipToNext,
-      ],
-      notificationCapabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.Stop,
-        Capability.SkipToNext,
-        Capability.SkipToPrevious,
-        Capability.SeekTo,
-      ],
-    });
-  })().catch((error) => {
-    playerSetupPromise = null;
-    throw error;
-  });
-
-const ensureTrackPlayerReady = async (hasRetried = false): Promise<void> => {
-  if (playerSetupPromise) {
-    try {
-      await playerSetupPromise;
-      await TrackPlayer.getPlaybackState();
-      return;
-    } catch (error) {
-      if (!(isPlayerNotReadyError(error) && !hasRetried)) {
-        throw error;
-      }
-      playerSetupPromise = null;
-    }
-  }
-
-  playerSetupPromise = setupTrackPlayer();
-  await playerSetupPromise;
-  if (!hasRetried) {
-    await ensureTrackPlayerReady(true);
-  }
-};
-
-const toTrackPlayerRepeatMode = (repeatMode: RepeatMode) => {
-  if (repeatMode === "track") {
-    return TrackPlayerRepeatMode.Track;
-  }
-  if (repeatMode === "queue") {
-    return TrackPlayerRepeatMode.Queue;
-  }
-  return TrackPlayerRepeatMode.Off;
-};
-
-const toTrackPlayerTrack = (track: LocalTrack): Track => ({
+const toNativeTrack = (track: LocalTrack): NativePlaybackTrack => ({
   album: track.album,
   artist: track.artist,
-  artwork: track.artworkUri ?? undefined,
-  contentType: track.mimeType ?? undefined,
-  duration: track.durationMs / 1000,
+  artworkUri: track.artworkUri ?? undefined,
   id: track.id,
+  mimeType: track.mimeType ?? undefined,
   title: track.title,
-  url: track.uri,
+  uri: track.uri,
 });
+
+const clampProgressMs = (progressMs: number, durationMs: number) => {
+  const safeProgressMs = Math.max(0, progressMs);
+  return durationMs > 0 ? Math.min(safeProgressMs, durationMs) : safeProgressMs;
+};
 
 const shuffledTracksAfterCurrent = (
   tracks: LocalTrack[],
@@ -242,263 +120,120 @@ const shuffledTracksAfterCurrent = (
   return [currentTrack, ...upcomingTracks];
 };
 
-const applyShuffleOn = async (
-  nativeActiveIndex: number | undefined,
-  nextQueue: LocalTrack[]
-) => {
-  await TrackPlayer.removeUpcomingTracks();
-  if (typeof nativeActiveIndex === "number" && nativeActiveIndex > 0) {
-    const indicesToRemove = Array.from(
-      { length: nativeActiveIndex },
-      (_, i) => i
-    );
-    await TrackPlayer.remove(indicesToRemove);
+const resolveNativeQueue = (snapshot: PlaybackSnapshot, queueIds: string[]) => {
+  if (queueIds.length === 0) {
+    return snapshot.queue;
   }
-  const upcomingTracks = nextQueue.slice(1);
-  if (upcomingTracks.length > 0) {
-    await TrackPlayer.add(upcomingTracks.map(toTrackPlayerTrack));
-  }
-};
 
-const applyShuffleOff = async (
-  nativeActiveIndex: number | undefined,
-  nextIndex: number,
-  nextQueue: LocalTrack[]
-) => {
-  await TrackPlayer.removeUpcomingTracks();
-  if (typeof nativeActiveIndex === "number" && nativeActiveIndex > 0) {
-    const indicesToRemove = Array.from(
-      { length: nativeActiveIndex },
-      (_, i) => i
-    );
-    await TrackPlayer.remove(indicesToRemove);
-  }
-  const tracksAfter = nextQueue.slice(nextIndex + 1);
-  if (tracksAfter.length > 0) {
-    await TrackPlayer.add(tracksAfter.map(toTrackPlayerTrack));
-  }
-  const tracksBefore = nextQueue.slice(0, nextIndex);
-  if (tracksBefore.length > 0) {
-    await TrackPlayer.add(tracksBefore.map(toTrackPlayerTrack), 0);
-  }
-};
-
-const getTrackMap = (trackGroups: LocalTrack[][]) =>
-  new Map(
-    trackGroups.flatMap((tracks) => tracks.map((track) => [track.id, track]))
+  const tracksById = new Map(
+    [...snapshot.sourceQueue, ...snapshot.queue].map((track) => [
+      track.id,
+      track,
+    ])
   );
-
-const resolveNativeQueue = (
-  nativeQueue: Track[],
-  tracksById: Map<string, LocalTrack>
-) =>
-  nativeQueue
-    .map((track) => {
-      const trackId = getTrackId(track);
-      return trackId ? tracksById.get(trackId) : undefined;
-    })
+  const queue = queueIds
+    .map((trackId) => tracksById.get(trackId))
     .filter((track): track is LocalTrack => Boolean(track));
 
-const clampProgressMs = (progressMs: number, durationMs: number) => {
-  const safeProgressMs = Math.max(0, progressMs);
-  return durationMs > 0 ? Math.min(safeProgressMs, durationMs) : safeProgressMs;
+  return queue.length === queueIds.length ? queue : snapshot.queue;
 };
 
-const getProgressMs = (positionSeconds: number) =>
-  Math.max(0, Math.round(positionSeconds * 1000));
+const publishNativeSnapshot = (nativeSnapshot: NativePlaybackSnapshot) => {
+  publishPlaybackSnapshot(
+    (snapshot) => {
+      if (nativeSnapshot.capturedAtMs < snapshot.updatedAtMs) {
+        return {};
+      }
 
-const getDurationMs = (durationSeconds: number, fallbackDurationMs: number) =>
-  Math.round(durationSeconds * 1000) || fallbackDurationMs;
+      if (nativeSnapshot.queueIds.length === 0) {
+        return {
+          error: nativeSnapshot.error,
+          playbackState: snapshot.queue.length > 0 ? "paused" : "idle",
+          playWhenReady: false,
+        };
+      }
 
-const getActiveTrackPatch = (
+      const queue = resolveNativeQueue(snapshot, nativeSnapshot.queueIds);
+      const nativeTrackIndex = nativeSnapshot.activeTrackId
+        ? queue.findIndex((track) => track.id === nativeSnapshot.activeTrackId)
+        : nativeSnapshot.activeIndex;
+      const activeIndex =
+        nativeTrackIndex >= 0 && nativeTrackIndex < queue.length
+          ? nativeTrackIndex
+          : snapshot.activeIndex;
+      const activeTrack = queue[activeIndex];
+      const durationMs =
+        nativeSnapshot.durationMs ||
+        activeTrack?.durationMs ||
+        snapshot.durationMs;
+      return {
+        activeIndex,
+        activeTrackId: activeTrack?.id ?? nativeSnapshot.activeTrackId ?? null,
+        durationMs,
+        error: nativeSnapshot.error,
+        playbackState: nativeSnapshot.playbackState,
+        playWhenReady: nativeSnapshot.playWhenReady,
+        progressMs: clampProgressMs(nativeSnapshot.positionMs, durationMs),
+        queue,
+        repeatMode: nativeSnapshot.repeatMode,
+      };
+    },
+    {
+      observedAtMs: nativeSnapshot.capturedAtMs,
+      projectBeforeUpdate: false,
+    }
+  );
+};
+
+const publishPlaybackError = (error: unknown) => {
+  publishPlaybackSnapshot(
+    { error: getErrorMessage(error) },
+    { persist: false }
+  );
+};
+
+const setNativeQueue = async (
   queue: LocalTrack[],
   activeIndex: number,
-  progressMs = 0
-): Partial<PlaybackSnapshot> => {
-  const activeTrack = queue[activeIndex];
-  if (!activeTrack) {
-    return {
-      activeIndex: -1,
-      activeTrackId: null,
-      durationMs: 0,
-      progressMs: 0,
-    };
-  }
-
-  return {
-    activeIndex,
-    activeTrackId: activeTrack.id,
-    durationMs: activeTrack.durationMs,
-    progressMs,
-  };
-};
-
-interface PlaybackRepairTarget {
-  activeIndex: number;
-  activeTrackId: string | null;
-  queue: LocalTrack[];
-}
-
-const getRepairTargetFromQueue = (
-  queue: LocalTrack[],
-  nativeActiveTrackId: string | null,
-  nativeActiveIndex: number | undefined
-): PlaybackRepairTarget => {
-  if (nativeActiveTrackId) {
-    return {
-      activeIndex: queue.findIndex((track) => track.id === nativeActiveTrackId),
-      activeTrackId: nativeActiveTrackId,
-      queue,
-    };
-  }
-
-  if (typeof nativeActiveIndex === "number" && queue[nativeActiveIndex]) {
-    return {
-      activeIndex: nativeActiveIndex,
-      activeTrackId: queue[nativeActiveIndex].id,
-      queue,
-    };
-  }
-
-  return {
-    activeIndex: -1,
-    activeTrackId: null,
-    queue,
-  };
-};
-
-const getLocalRepairTarget = (
-  snapshot: PlaybackSnapshot,
-  nativeActiveTrackId: string | null,
-  nativeActiveIndex: number | undefined
-) =>
-  getRepairTargetFromQueue(
-    snapshot.queue,
-    nativeActiveTrackId,
-    nativeActiveIndex
-  );
-
-const shouldFetchNativeQueueForRepair = (
-  target: PlaybackRepairTarget,
-  nativeActiveTrackId: string | null,
-  nativeActiveIndex: number | undefined
-) =>
-  (nativeActiveTrackId !== null && target.activeIndex < 0) ||
-  (nativeActiveTrackId === null &&
-    typeof nativeActiveIndex === "number" &&
-    !target.queue[nativeActiveIndex]);
-
-const getNativeQueueRepairTarget = (
-  snapshot: PlaybackSnapshot,
-  nativeQueue: Track[],
-  nativeActiveTrackId: string | null,
-  nativeActiveIndex: number | undefined
-): PlaybackRepairTarget | null => {
-  const resolvedQueue = resolveNativeQueue(
-    nativeQueue,
-    getTrackMap([snapshot.sourceQueue, snapshot.queue])
-  );
-
-  if (
-    resolvedQueue.length === 0 ||
-    resolvedQueue.length !== nativeQueue.length
-  ) {
-    return null;
-  }
-
-  return getRepairTargetFromQueue(
-    resolvedQueue,
-    nativeActiveTrackId,
-    nativeActiveIndex
-  );
-};
-
-const getOptimisticPlaybackState = (
-  nextPlayWhenReady: boolean,
-  playbackState: State | undefined
+  positionMs: number,
+  playWhenReady: boolean,
+  repeatMode: RepeatMode
 ) => {
-  if (
-    nextPlayWhenReady &&
-    (playbackState === undefined ||
-      !trackPlayerPlayingStates.has(playbackState))
-  ) {
-    return State.Ready;
-  }
+  const nativeSnapshot = await ReverbPlayer.setQueue(queue.map(toNativeTrack), {
+    activeIndex,
+    playWhenReady,
+    positionMs,
+    repeatMode,
+  });
 
-  return playbackState;
+  publishNativeSnapshot(nativeSnapshot);
 };
 
-const getRepairSnapshotPatch = (snapshot: {
-  currentSnapshot: PlaybackSnapshot;
-  isPositionAdvancing: boolean;
-  nativePlaybackState: State;
-  nativePlayWhenReady: boolean;
-  nativeProgress: Pick<NowPlayingSnapshot, "duration" | "position">;
-  target: PlaybackRepairTarget;
-}): Partial<PlaybackSnapshot> => {
-  const activeTrack =
-    snapshot.target.activeIndex >= 0
-      ? snapshot.target.queue[snapshot.target.activeIndex]
-      : null;
-  const durationMs = getDurationMs(
-    snapshot.nativeProgress.duration,
-    activeTrack?.durationMs || snapshot.currentSnapshot.durationMs
+const nativeQueueMatches = (
+  nativeSnapshot: NativePlaybackSnapshot,
+  queue: LocalTrack[]
+) =>
+  nativeSnapshot.queueIds.length === queue.length &&
+  nativeSnapshot.queueIds.every(
+    (trackId, index) => trackId === queue[index]?.id
   );
-  const isStopped =
-    snapshot.nativePlaybackState === State.Stopped ||
-    snapshot.nativePlaybackState === State.None;
 
-  return {
-    activeIndex:
-      snapshot.target.activeIndex >= 0
-        ? snapshot.target.activeIndex
-        : snapshot.currentSnapshot.activeIndex,
-    activeTrackId:
-      snapshot.target.activeTrackId ??
-      snapshot.currentSnapshot.activeTrackId ??
-      null,
-    durationMs,
-    error: null,
-    playbackState: snapshot.nativePlaybackState,
-    playWhenReady: snapshot.nativePlayWhenReady,
-    positionRate: snapshot.isPositionAdvancing ? 1 : 0,
-    progressMs: isStopped
-      ? 0
-      : clampProgressMs(
-          getProgressMs(snapshot.nativeProgress.position),
-          durationMs
-        ),
-    queue: snapshot.target.queue,
-  };
-};
-
-const getSnapshotPlaybackValues = (snapshot: PlaybackSnapshot) => {
+const getPlaybackValues = (snapshot: PlaybackSnapshot) => {
   const currentTrack = getPlaybackSnapshotActiveTrack(snapshot);
   const index = getPlaybackSnapshotTrackIndex(snapshot);
   const durationMs = snapshot.durationMs || currentTrack?.durationMs || 0;
-  const isEffectivelyStopped =
-    snapshot.playbackState === State.Stopped ||
-    snapshot.playbackState === State.None;
-  const progressMs = isEffectivelyStopped
-    ? 0
-    : clampProgressMs(snapshot.progressMs, durationMs);
-  const isPlaying =
-    currentTrack !== null &&
-    snapshot.playWhenReady === true &&
-    snapshot.playbackState !== undefined &&
-    trackPlayerPlayingStates.has(snapshot.playbackState);
-
   return {
     currentTrack,
     durationMs,
     index,
-    isPlaying,
-    progressMs,
+    isPlaying:
+      currentTrack !== null &&
+      snapshot.playWhenReady &&
+      (snapshot.playbackState === "buffering" ||
+        snapshot.playbackState === "playing" ||
+        snapshot.playbackState === "ready"),
+    progressMs: clampProgressMs(snapshot.progressMs, durationMs),
   };
-};
-
-const publishPlaybackError = (error: unknown) => {
-  publishPlaybackSnapshot({ error: getErrorMessage(error) });
 };
 
 function usePlaybackProviderValues() {
@@ -509,295 +244,55 @@ function usePlaybackProviderValues() {
   );
   const shuffleUpdateTokenRef = useRef(0);
   const { currentTrack, durationMs, index, isPlaying, progressMs } =
-    getSnapshotPlaybackValues(snapshot);
+    getPlaybackValues(snapshot);
 
-  const projectPlaybackSnapshotNow = useCallback(() => {
-    publishProjectedPlaybackSnapshot(Date.now());
-  }, []);
-
-  const reconcilePlaybackSnapshotFromNative = useCallback(async () => {
+  const reconcileFromNative = useCallback(async () => {
     try {
-      await ensureTrackPlayerReady();
-
-      const nativeSnapshot = await TrackPlayer.getNowPlayingSnapshot();
-      const receivedAtMs = nativeSnapshot.capturedAtMs ?? Date.now();
-      const currentSnapshot = getPlaybackSnapshot();
-      const nativeActiveTrackId =
-        nativeSnapshot.activeTrackId ?? getTrackId(nativeSnapshot.activeTrack);
-
-      if (
-        nativeSnapshot.queueLength === 0 ||
-        (nativeActiveTrackId === null &&
-          nativeSnapshot.activeIndex === undefined)
-      ) {
-        publishPlaybackSnapshot(
-          {
-            error: null,
-            playbackState:
-              currentSnapshot.queue.length > 0
-                ? State.Stopped
-                : nativeSnapshot.playbackState.state,
-            playWhenReady: false,
-            positionRate: 0,
-          },
-          {
-            observedAtMs: receivedAtMs,
-            projectBeforeUpdate: false,
-          }
-        );
-        return;
+      const stoppedSnapshot = await ReverbPlayer.getLastStoppedSnapshot();
+      if (stoppedSnapshot) {
+        restoreStoppedPlaybackSnapshot(stoppedSnapshot);
       }
-
-      let target = getLocalRepairTarget(
-        currentSnapshot,
-        nativeActiveTrackId,
-        nativeSnapshot.activeIndex
-      );
-
-      if (
-        shouldFetchNativeQueueForRepair(
-          target,
-          nativeActiveTrackId,
-          nativeSnapshot.activeIndex
-        )
-      ) {
-        const nativeQueue = await TrackPlayer.getQueue();
-        target =
-          getNativeQueueRepairTarget(
-            currentSnapshot,
-            nativeQueue,
-            nativeActiveTrackId,
-            nativeSnapshot.activeIndex
-          ) ?? target;
-      }
-
-      publishPlaybackSnapshot(
-        {
-          ...getRepairSnapshotPatch({
-            currentSnapshot,
-            isPositionAdvancing:
-              nativeSnapshot.isPositionAdvancing ??
-              nativeSnapshot.playbackState.state === State.Playing,
-            nativePlaybackState: nativeSnapshot.playbackState.state,
-            nativePlayWhenReady: nativeSnapshot.playWhenReady,
-            nativeProgress: nativeSnapshot,
-            target,
-          }),
-        },
-        {
-          observedAtMs: receivedAtMs,
-          projectBeforeUpdate: false,
-        }
-      );
-    } catch (syncError) {
-      if (isPlayerNotReadyError(syncError)) {
-        playerSetupPromise = null;
-      }
-      publishPlaybackError(syncError);
+      publishNativeSnapshot(await ReverbPlayer.connect());
+    } catch (error) {
+      publishPlaybackError(error);
     }
   }, []);
-
-  const repairPlaybackSnapshotFromNative = useCallback(async () => {
-    projectPlaybackSnapshotNow();
-    await reconcilePlaybackSnapshotFromNative();
-  }, [projectPlaybackSnapshotNow, reconcilePlaybackSnapshotFromNative]);
-
-  const runWithPlayWhenReady = useCallback(
-    async (nextPlayWhenReady: boolean, action: () => Promise<void>) => {
-      const previousSnapshot = getPlaybackSnapshot();
-      publishPlaybackSnapshot({
-        error: null,
-        playbackState: getOptimisticPlaybackState(
-          nextPlayWhenReady,
-          previousSnapshot.playbackState
-        ),
-        playWhenReady: nextPlayWhenReady,
-      });
-
-      try {
-        await action();
-      } catch (error) {
-        publishPlaybackSnapshot({
-          playbackState: previousSnapshot.playbackState,
-          playWhenReady: previousSnapshot.playWhenReady,
-        });
-        throw error;
-      }
-    },
-    []
-  );
-
-  const replaceTrackPlayerQueue = useCallback(
-    async (
-      tracks: LocalTrack[],
-      nextIndex: number,
-      shouldPlay: boolean,
-      nextRepeatMode: RepeatMode,
-      startPositionMs = 0
-    ) => {
-      if (tracks.length === 0) {
-        publishPlaybackSnapshot({
-          activeIndex: -1,
-          activeTrackId: null,
-          durationMs: 0,
-          progressMs: 0,
-          queue: [],
-        });
-        return;
-      }
-
-      await ensureTrackPlayerReady();
-      await TrackPlayer.reset();
-      const safeIndex = Math.min(Math.max(nextIndex, 0), tracks.length - 1);
-      await TrackPlayer.add(tracks.map(toTrackPlayerTrack));
-      await TrackPlayer.setRepeatMode(toTrackPlayerRepeatMode(nextRepeatMode));
-      if (safeIndex > 0) {
-        await TrackPlayer.skip(safeIndex);
-      }
-      if (startPositionMs > 0) {
-        await TrackPlayer.seekTo(startPositionMs / 1000);
-      }
-      if (shouldPlay) {
-        await TrackPlayer.play();
-      }
-
-      publishPlaybackSnapshot({
-        ...getActiveTrackPatch(tracks, safeIndex, startPositionMs),
-        error: null,
-        playbackState: shouldPlay ? State.Loading : State.Ready,
-        playWhenReady: shouldPlay,
-        queue: tracks,
-        repeatMode: nextRepeatMode,
-      });
-    },
-    []
-  );
-
-  const rebuildQueueForShuffle = useCallback(
-    async (nextShuffle: boolean, updateToken: number) => {
-      const currentSnapshot = getPlaybackSnapshot();
-      const activeTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
-      if (!activeTrack || currentSnapshot.sourceQueue.length === 0) {
-        return;
-      }
-
-      const sourceIndex = currentSnapshot.sourceQueue.findIndex(
-        (track) => track.id === activeTrack.id
-      );
-      if (sourceIndex < 0) {
-        return;
-      }
-
-      const nextQueue = nextShuffle
-        ? shuffledTracksAfterCurrent(
-            currentSnapshot.sourceQueue,
-            activeTrack.id
-          )
-        : currentSnapshot.sourceQueue;
-      const nextIndex = nextQueue.findIndex(
-        (track) => track.id === activeTrack.id
-      );
-      if (nextIndex < 0 || shuffleUpdateTokenRef.current !== updateToken) {
-        return;
-      }
-
-      await ensureTrackPlayerReady();
-      const [nativeActiveIndex, nativeProgress] = await Promise.all([
-        TrackPlayer.getActiveTrackIndex(),
-        TrackPlayer.getProgress(),
-      ]);
-
-      setPlaybackSnapshotActiveTrackEventsSuppressed(true);
-      try {
-        if (nextShuffle) {
-          await applyShuffleOn(nativeActiveIndex, nextQueue);
-        } else {
-          await applyShuffleOff(nativeActiveIndex, nextIndex, nextQueue);
-        }
-      } finally {
-        setPlaybackSnapshotActiveTrackEventsSuppressed(false);
-      }
-
-      const nativeProgressMs = getProgressMs(nativeProgress.position);
-      const nextDurationMs = getDurationMs(
-        nativeProgress.duration,
-        activeTrack.durationMs
-      );
-
-      publishPlaybackSnapshot({
-        ...getActiveTrackPatch(
-          nextQueue,
-          nextIndex,
-          clampProgressMs(nativeProgressMs, nextDurationMs)
-        ),
-        queue: nextQueue,
-      });
-    },
-    []
-  );
 
   useEffect(() => {
     let isMounted = true;
-    let foregroundSyncPending = false;
-    const projectThenReconcile = () => {
-      projectPlaybackSnapshotNow();
-      reconcilePlaybackSnapshotFromNative().catch(publishPlaybackError);
-    };
-    const projectThenFlush = () => {
-      projectPlaybackSnapshotNow();
-      flushPlaybackSnapshot().catch(publishPlaybackError);
-    };
-    const initialisationPromise = hydratePlaybackSnapshot().then(async () => {
-      await ensureTrackPlayerReady();
-      try {
-        const stoppedSnapshot = await TrackPlayer.getLastStoppedSnapshot();
-        if (stoppedSnapshot) {
-          restoreStoppedPlaybackSnapshot(stoppedSnapshot);
+    const nativeSubscription = ReverbPlayer.addListener(
+      "onPlaybackSnapshotChanged",
+      ({ snapshot: nativeSnapshot }) => {
+        if (isMounted) {
+          publishNativeSnapshot(nativeSnapshot);
         }
-      } catch {
-        // The shutdown checkpoint is Android-only.
       }
-    });
-    const syncForegroundWhenReady = () => {
-      if (foregroundSyncPending) {
-        return;
+    );
+    const initialisationPromise = hydratePlaybackSnapshot().then(() =>
+      reconcileFromNative()
+    );
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        if (nextState === "active") {
+          publishProjectedPlaybackSnapshot();
+          initialisationPromise
+            .then(reconcileFromNative)
+            .catch(publishPlaybackError);
+          return;
+        }
+        if (nextState === "inactive" || nextState === "background") {
+          flushPlaybackSnapshot().catch(publishPlaybackError);
+        }
       }
-
-      foregroundSyncPending = true;
-      initialisationPromise
-        .then(() => {
-          if (isMounted && AppState.currentState === "active") {
-            projectThenReconcile();
-          }
-        })
-        .catch(publishPlaybackError)
-        .finally(() => {
-          foregroundSyncPending = false;
-        });
-    };
-
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        syncForegroundWhenReady();
-        return;
-      }
-
-      if (nextState === "inactive" || nextState === "background") {
-        initialisationPromise
-          .then(projectThenFlush)
-          .catch(publishPlaybackError);
-      }
-    });
-
-    if (AppState.currentState === "active") {
-      syncForegroundWhenReady();
-    }
+    );
 
     return () => {
       isMounted = false;
-      subscription.remove();
+      nativeSubscription.remove();
+      appStateSubscription.remove();
     };
-  }, [projectPlaybackSnapshotNow, reconcilePlaybackSnapshotFromNative]);
+  }, [reconcileFromNative]);
 
   useEffect(() => {
     const activeIndex = snapshot.activeTrackId
@@ -810,16 +305,11 @@ function usePlaybackProviderValues() {
     ]
       .map((track) => track?.artworkUri)
       .filter((uri): uri is string => Boolean(uri));
-
-    if (artworkUris.length === 0) {
-      return;
+    if (artworkUris.length > 0) {
+      Image.prefetch([...new Set(artworkUris)], {
+        cachePolicy: "memory-disk",
+      }).catch(() => undefined);
     }
-
-    Image.prefetch([...new Set(artworkUris)], {
-      cachePolicy: "memory-disk",
-    }).catch(() => {
-      // Prefetching is only a visual warm-up; playback should never care.
-    });
   }, [snapshot.activeIndex, snapshot.activeTrackId, snapshot.queue]);
 
   const playQueue = useCallback(
@@ -834,176 +324,137 @@ function usePlaybackProviderValues() {
         ? shuffledTracksAfterCurrent(tracks, tracks[clampedIndex].id)
         : tracks;
       const queueIndex = currentSnapshot.shuffle ? 0 : clampedIndex;
+      const activeTrack = nextQueue[queueIndex];
 
+      publishPlaybackSnapshot({
+        activeIndex: queueIndex,
+        activeTrackId: activeTrack.id,
+        durationMs: activeTrack.durationMs,
+        error: null,
+        playbackState: "buffering",
+        playWhenReady: true,
+        progressMs: 0,
+        queue: nextQueue,
+        sourceQueue: tracks,
+      });
       try {
-        publishPlaybackSnapshot({ error: null, sourceQueue: tracks });
-        await runWithPlayWhenReady(true, () =>
-          replaceTrackPlayerQueue(
-            nextQueue,
-            queueIndex,
-            true,
-            currentSnapshot.repeatMode
-          )
+        await setNativeQueue(
+          nextQueue,
+          queueIndex,
+          0,
+          true,
+          currentSnapshot.repeatMode
         );
-      } catch (playbackError) {
-        publishPlaybackError(playbackError);
-        repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
+      } catch (error) {
+        publishPlaybackError(error);
+        await reconcileFromNative();
       }
     },
-    [
-      repairPlaybackSnapshotFromNative,
-      replaceTrackPlayerQueue,
-      runWithPlayWhenReady,
-    ]
+    [reconcileFromNative]
   );
+
+  const togglePlayPause = useCallback(async () => {
+    const currentSnapshot = getPlaybackSnapshot();
+    const values = getPlaybackValues(currentSnapshot);
+    if (!values.currentTrack) {
+      return;
+    }
+
+    try {
+      if (values.isPlaying) {
+        publishPlaybackSnapshot({ playWhenReady: false });
+        publishNativeSnapshot(await ReverbPlayer.pause());
+        return;
+      }
+
+      const nativeSnapshot = await ReverbPlayer.getSnapshot();
+      publishPlaybackSnapshot({
+        error: null,
+        playbackState: "buffering",
+        playWhenReady: true,
+      });
+      if (nativeQueueMatches(nativeSnapshot, currentSnapshot.queue)) {
+        if (currentSnapshot.playbackState === "ended") {
+          await ReverbPlayer.seekTo(0);
+        }
+        publishNativeSnapshot(await ReverbPlayer.play());
+        return;
+      }
+      const startPositionMs =
+        currentSnapshot.playbackState === "ended" ? 0 : values.progressMs;
+      await setNativeQueue(
+        currentSnapshot.queue,
+        Math.max(values.index, 0),
+        startPositionMs,
+        true,
+        currentSnapshot.repeatMode
+      );
+    } catch (error) {
+      publishPlaybackError(error);
+      await reconcileFromNative();
+    }
+  }, [reconcileFromNative]);
 
   const skipNext = useCallback(async () => {
     const currentSnapshot = getPlaybackSnapshot();
     const currentIndex = getPlaybackSnapshotTrackIndex(currentSnapshot);
-    if (currentSnapshot.queue.length === 0 || currentIndex < 0) {
+    if (currentIndex < 0 || currentSnapshot.queue.length === 0) {
       return;
     }
 
     try {
-      publishPlaybackSnapshot({ error: null });
+      const nativeSnapshot = await ReverbPlayer.getSnapshot();
+      if (!nativeQueueMatches(nativeSnapshot, currentSnapshot.queue)) {
+        await setNativeQueue(
+          currentSnapshot.queue,
+          currentIndex,
+          currentSnapshot.progressMs,
+          currentSnapshot.playWhenReady,
+          currentSnapshot.repeatMode
+        );
+      }
       if (currentSnapshot.repeatMode === "track") {
-        await ensureTrackPlayerReady();
-        await runWithPlayWhenReady(true, async () => {
-          publishPlaybackSnapshot({
-            ...getActiveTrackPatch(currentSnapshot.queue, currentIndex, 0),
-          });
-          await TrackPlayer.skip(currentIndex, 0);
-          await TrackPlayer.play();
-        });
+        publishNativeSnapshot(await ReverbPlayer.seekTo(0));
         return;
       }
-
-      if (currentIndex + 1 >= currentSnapshot.queue.length) {
-        if (currentSnapshot.repeatMode === "queue") {
-          await ensureTrackPlayerReady();
-          await runWithPlayWhenReady(true, async () => {
-            publishPlaybackSnapshot({
-              ...getActiveTrackPatch(currentSnapshot.queue, 0, 0),
-            });
-            await TrackPlayer.skip(0, 0);
-            await TrackPlayer.play();
-          });
-          return;
-        }
-        await ensureTrackPlayerReady();
-        await runWithPlayWhenReady(false, () => TrackPlayer.pause());
-        return;
-      }
-
-      await ensureTrackPlayerReady();
-      await runWithPlayWhenReady(true, async () => {
-        publishPlaybackSnapshot({
-          ...getActiveTrackPatch(currentSnapshot.queue, currentIndex + 1, 0),
-        });
-        await TrackPlayer.skipToNext();
-        await TrackPlayer.play();
-      });
-    } catch (skipError) {
-      publishPlaybackError(skipError);
-      repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
+      publishNativeSnapshot(await ReverbPlayer.skipNext());
+    } catch (error) {
+      publishPlaybackError(error);
+      await reconcileFromNative();
     }
-  }, [repairPlaybackSnapshotFromNative, runWithPlayWhenReady]);
+  }, [reconcileFromNative]);
 
   const skipPrevious = useCallback(async () => {
     const currentSnapshot = getPlaybackSnapshot();
     const currentIndex = getPlaybackSnapshotTrackIndex(currentSnapshot);
-    if (currentSnapshot.queue.length === 0 || currentIndex < 0) {
+    if (currentIndex < 0 || currentSnapshot.queue.length === 0) {
       return;
     }
 
     try {
-      publishPlaybackSnapshot({ error: null });
-      const currentDurationMs =
-        durationMs || currentSnapshot.queue[currentIndex]?.durationMs || 0;
-      const restartCurrentTrack =
-        clampProgressMs(progressMs, currentDurationMs) >
-        restartTrackThresholdMs;
-
-      if (restartCurrentTrack) {
-        publishPlaybackSnapshot({
-          durationMs: currentDurationMs,
-          progressMs: 0,
-        });
-        await ensureTrackPlayerReady();
-        await TrackPlayer.seekTo(0);
-        return;
-      }
-
-      const previousIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-      await ensureTrackPlayerReady();
-      await runWithPlayWhenReady(true, async () => {
-        publishPlaybackSnapshot({
-          ...getActiveTrackPatch(currentSnapshot.queue, previousIndex, 0),
-        });
-        await TrackPlayer.skip(previousIndex, 0);
-        await TrackPlayer.play();
-      });
-    } catch (skipError) {
-      publishPlaybackError(skipError);
-      repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
-    }
-  }, [
-    durationMs,
-    progressMs,
-    repairPlaybackSnapshotFromNative,
-    runWithPlayWhenReady,
-  ]);
-
-  const togglePlayPause = useCallback(async () => {
-    const currentSnapshot = getPlaybackSnapshot();
-    const currentValues = getSnapshotPlaybackValues(currentSnapshot);
-    const shouldRestartQueue =
-      (currentSnapshot.playbackState === State.None ||
-        currentSnapshot.playbackState === State.Stopped) &&
-      currentSnapshot.queue.length > 0;
-
-    try {
-      publishPlaybackSnapshot({ error: null });
-      if (currentValues.isPlaying) {
-        await ensureTrackPlayerReady();
-        await runWithPlayWhenReady(false, () => TrackPlayer.pause());
-        return;
-      }
-      if (shouldRestartQueue) {
-        const startPositionMs = Math.min(
-          currentValues.progressMs,
-          currentValues.durationMs
+      const nativeSnapshot = await ReverbPlayer.getSnapshot();
+      if (!nativeQueueMatches(nativeSnapshot, currentSnapshot.queue)) {
+        await setNativeQueue(
+          currentSnapshot.queue,
+          currentIndex,
+          currentSnapshot.progressMs,
+          currentSnapshot.playWhenReady,
+          currentSnapshot.repeatMode
         );
-        await runWithPlayWhenReady(true, () =>
-          replaceTrackPlayerQueue(
-            currentSnapshot.queue,
-            Math.max(currentValues.index, 0),
-            true,
-            currentSnapshot.repeatMode,
-            startPositionMs
-          )
-        );
-        return;
       }
-      await ensureTrackPlayerReady();
-      await runWithPlayWhenReady(true, () => TrackPlayer.play());
-    } catch (playbackError) {
-      publishPlaybackError(playbackError);
-      repairPlaybackSnapshotFromNative().catch(publishPlaybackError);
+      publishNativeSnapshot(await ReverbPlayer.skipPrevious());
+    } catch (error) {
+      publishPlaybackError(error);
+      await reconcileFromNative();
     }
-  }, [
-    repairPlaybackSnapshotFromNative,
-    replaceTrackPlayerQueue,
-    runWithPlayWhenReady,
-  ]);
+  }, [reconcileFromNative]);
 
   const seekToPosition = useCallback(async (nextProgressMs: number) => {
     const currentSnapshot = getPlaybackSnapshot();
-    const currentActiveTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
+    const activeTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
     const nextDurationMs =
-      currentSnapshot.durationMs || currentActiveTrack?.durationMs || 0;
+      currentSnapshot.durationMs || activeTrack?.durationMs || 0;
     const clampedProgressMs = clampProgressMs(nextProgressMs, nextDurationMs);
-
     publishPlaybackSnapshot({
       durationMs: nextDurationMs,
       error: null,
@@ -1011,40 +462,69 @@ function usePlaybackProviderValues() {
     });
 
     try {
-      await ensureTrackPlayerReady();
-      await TrackPlayer.seekTo(clampedProgressMs / 1000);
-    } catch (seekError) {
-      publishPlaybackError(seekError);
+      publishNativeSnapshot(await ReverbPlayer.seekTo(clampedProgressMs));
+    } catch (error) {
+      publishPlaybackError(error);
     }
   }, []);
 
   const setRepeatMode = useCallback((nextRepeatMode: RepeatMode) => {
     publishPlaybackSnapshot({ repeatMode: nextRepeatMode });
-    ensureTrackPlayerReady()
-      .then(() =>
-        TrackPlayer.setRepeatMode(toTrackPlayerRepeatMode(nextRepeatMode))
-      )
-      .catch((repeatError) => {
-        publishPlaybackError(repeatError);
-      });
+    ReverbPlayer.setRepeatMode(nextRepeatMode)
+      .then(publishNativeSnapshot)
+      .catch(publishPlaybackError);
   }, []);
 
-  const setShuffle = useCallback(
-    (nextShuffle: boolean) => {
-      const previousShuffle = getPlaybackSnapshot().shuffle;
-      const updateToken = shuffleUpdateTokenRef.current + 1;
-      shuffleUpdateTokenRef.current = updateToken;
+  const setShuffle = useCallback((nextShuffle: boolean) => {
+    const updateToken = shuffleUpdateTokenRef.current + 1;
+    shuffleUpdateTokenRef.current = updateToken;
+    const currentSnapshot = getPlaybackSnapshot();
+    const activeTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
+    if (!(activeTrack && currentSnapshot.sourceQueue.length > 0)) {
       publishPlaybackSnapshot({ shuffle: nextShuffle });
-      rebuildQueueForShuffle(nextShuffle, updateToken).catch((shuffleError) => {
-        if (shuffleUpdateTokenRef.current !== updateToken) {
-          return;
+      return;
+    }
+
+    const nextQueue = nextShuffle
+      ? shuffledTracksAfterCurrent(currentSnapshot.sourceQueue, activeTrack.id)
+      : currentSnapshot.sourceQueue;
+    const nextIndex = nextQueue.findIndex(
+      (track) => track.id === activeTrack.id
+    );
+    publishPlaybackSnapshot({
+      activeIndex: nextIndex,
+      activeTrackId: activeTrack.id,
+      queue: nextQueue,
+      shuffle: nextShuffle,
+    });
+
+    ReverbPlayer.getSnapshot()
+      .then((nativeSnapshot) => {
+        if (
+          shuffleUpdateTokenRef.current !== updateToken ||
+          nativeSnapshot.queueIds.length === 0
+        ) {
+          return null;
         }
-        publishPlaybackSnapshot({ shuffle: previousShuffle });
-        publishPlaybackError(shuffleError);
+        return ReverbPlayer.replaceQueueOrder(nextQueue.map(toNativeTrack));
+      })
+      .then((nativeSnapshot) => {
+        if (nativeSnapshot) {
+          publishNativeSnapshot(nativeSnapshot);
+        }
+      })
+      .catch((error) => {
+        if (shuffleUpdateTokenRef.current === updateToken) {
+          publishPlaybackSnapshot({
+            activeIndex: currentSnapshot.activeIndex,
+            activeTrackId: currentSnapshot.activeTrackId,
+            queue: currentSnapshot.queue,
+            shuffle: currentSnapshot.shuffle,
+          });
+          publishPlaybackError(error);
+        }
       });
-    },
-    [rebuildQueueForShuffle]
-  );
+  }, []);
 
   const trackValue = useMemo(
     () => ({
@@ -1057,19 +537,10 @@ function usePlaybackProviderValues() {
     [currentTrack, durationMs, index, snapshot.error, snapshot.queue]
   );
   const progressValue = useMemo(
-    () => ({
-      durationMs,
-      isPlaying,
-      progressMs,
-    }),
+    () => ({ durationMs, isPlaying, progressMs }),
     [durationMs, isPlaying, progressMs]
   );
-  const statusValue = useMemo(
-    () => ({
-      isPlaying,
-    }),
-    [isPlaying]
-  );
+  const statusValue = useMemo(() => ({ isPlaying }), [isPlaying]);
   const controlsValue = useMemo(
     () => ({
       playQueue,
@@ -1094,53 +565,16 @@ function usePlaybackProviderValues() {
       togglePlayPause,
     ]
   );
-
   const value = useMemo(
     () => ({
-      currentTrack,
-      durationMs,
-      error: snapshot.error,
-      index,
-      isPlaying,
-      playQueue,
-      progressMs,
-      queue: snapshot.queue,
-      repeatMode: snapshot.repeatMode,
-      seekToPosition,
-      setRepeatMode,
-      setShuffle,
-      shuffle: snapshot.shuffle,
-      skipNext,
-      skipPrevious,
-      togglePlayPause,
+      ...trackValue,
+      ...progressValue,
+      ...controlsValue,
     }),
-    [
-      currentTrack,
-      durationMs,
-      index,
-      isPlaying,
-      playQueue,
-      progressMs,
-      seekToPosition,
-      setRepeatMode,
-      setShuffle,
-      snapshot.error,
-      snapshot.queue,
-      snapshot.repeatMode,
-      snapshot.shuffle,
-      skipNext,
-      skipPrevious,
-      togglePlayPause,
-    ]
+    [controlsValue, progressValue, trackValue]
   );
 
-  return {
-    controlsValue,
-    progressValue,
-    statusValue,
-    trackValue,
-    value,
-  };
+  return { controlsValue, progressValue, statusValue, trackValue, value };
 }
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {

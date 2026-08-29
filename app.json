@@ -2,6 +2,7 @@
   "expo": {
     "name": "Reverb",
     "slug": "reverb",
+    "platforms": ["android"],
     "version": "1.0.5",
     "orientation": "portrait",
     "scheme": "reverb",

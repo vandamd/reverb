@@ -34,7 +34,6 @@
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "^5.6.2",
     "react-native-screens": "^4.23.0",
-    "react-native-track-player": "^4.1.2",
     "react-native-worklets": "0.7.4"
   },
   "devDependencies": {
@@ -49,8 +48,5 @@
     "ignore": [
       "plugins/**"
     ]
-  },
-  "patchedDependencies": {
-    "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch"
   }
 }
