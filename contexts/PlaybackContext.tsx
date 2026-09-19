@@ -39,6 +39,7 @@ interface PlaybackContextValue {
   progressMs: number;
   queue: LocalTrack[];
   repeatMode: RepeatMode;
+  seekByPosition: (offsetMs: number) => Promise<void>;
   seekToPosition: (progressMs: number) => Promise<void>;
   setRepeatMode: (repeatMode: RepeatMode) => void;
   setShuffle: (shuffle: boolean) => void;
@@ -70,6 +71,7 @@ const PlaybackControlsContext = createContext<
       PlaybackContextValue,
       | "playQueue"
       | "repeatMode"
+      | "seekByPosition"
       | "seekToPosition"
       | "setRepeatMode"
       | "setShuffle"
@@ -449,24 +451,43 @@ function usePlaybackProviderValues() {
     }
   }, [reconcileFromNative]);
 
-  const seekToPosition = useCallback(async (nextProgressMs: number) => {
-    const currentSnapshot = getPlaybackSnapshot();
-    const activeTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
-    const nextDurationMs =
-      currentSnapshot.durationMs || activeTrack?.durationMs || 0;
-    const clampedProgressMs = clampProgressMs(nextProgressMs, nextDurationMs);
-    publishPlaybackSnapshot({
-      durationMs: nextDurationMs,
-      error: null,
-      progressMs: clampedProgressMs,
-    });
+  const seek = useCallback(
+    async (resolveProgressMs: (progressMs: number) => number) => {
+      let clampedProgressMs = 0;
+      publishPlaybackSnapshot((currentSnapshot) => {
+        const activeTrack = getPlaybackSnapshotActiveTrack(currentSnapshot);
+        const nextDurationMs =
+          currentSnapshot.durationMs || activeTrack?.durationMs || 0;
+        clampedProgressMs = clampProgressMs(
+          resolveProgressMs(currentSnapshot.progressMs),
+          nextDurationMs
+        );
+        return {
+          durationMs: nextDurationMs,
+          error: null,
+          progressMs: clampedProgressMs,
+        };
+      });
 
-    try {
-      publishNativeSnapshot(await ReverbPlayer.seekTo(clampedProgressMs));
-    } catch (error) {
-      publishPlaybackError(error);
-    }
-  }, []);
+      try {
+        publishNativeSnapshot(await ReverbPlayer.seekTo(clampedProgressMs));
+      } catch (error) {
+        publishPlaybackError(error);
+      }
+    },
+    []
+  );
+
+  const seekByPosition = useCallback(
+    (offsetMs: number) =>
+      seek((currentProgressMs) => currentProgressMs + offsetMs),
+    [seek]
+  );
+
+  const seekToPosition = useCallback(
+    (nextProgressMs: number) => seek(() => nextProgressMs),
+    [seek]
+  );
 
   const setRepeatMode = useCallback((nextRepeatMode: RepeatMode) => {
     publishPlaybackSnapshot({ repeatMode: nextRepeatMode });
@@ -545,6 +566,7 @@ function usePlaybackProviderValues() {
     () => ({
       playQueue,
       repeatMode: snapshot.repeatMode,
+      seekByPosition,
       seekToPosition,
       setRepeatMode,
       setShuffle,
@@ -555,6 +577,7 @@ function usePlaybackProviderValues() {
     }),
     [
       playQueue,
+      seekByPosition,
       seekToPosition,
       setRepeatMode,
       setShuffle,

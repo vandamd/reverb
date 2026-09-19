@@ -126,6 +126,8 @@ const repeatIcon = {
   track: "repeat-one",
 } as const;
 
+const SEEK_INTERVAL_MS = 15_000;
+
 const ProgressIndicator = memo(function ProgressIndicator({
   colour,
   fallbackDurationMs,
@@ -243,8 +245,14 @@ const TransportControls = memo(function TransportControls({
   repeatMode: RepeatMode;
   shuffle: boolean;
 }) {
-  const { setRepeatMode, setShuffle, skipNext, skipPrevious, togglePlayPause } =
-    usePlaybackControls();
+  const {
+    seekByPosition,
+    setRepeatMode,
+    setShuffle,
+    skipNext,
+    skipPrevious,
+    togglePlayPause,
+  } = usePlaybackControls();
 
   const cycleRepeatMode = () => {
     if (repeatMode === "off") {
@@ -274,6 +282,9 @@ const TransportControls = memo(function TransportControls({
           />
         </HapticPressable>
         <HapticPressable
+          onLongPress={async () => {
+            await seekByPosition(-SEEK_INTERVAL_MS);
+          }}
           onPress={async () => {
             await skipPrevious();
           }}
@@ -288,6 +299,9 @@ const TransportControls = memo(function TransportControls({
           />
         </HapticPressable>
         <HapticPressable
+          onLongPress={async () => {
+            await seekByPosition(SEEK_INTERVAL_MS);
+          }}
           onPress={async () => {
             await skipNext();
           }}
