@@ -79,7 +79,7 @@ export default function TrackActionsScreen() {
               params: { trackId: track.id },
             })
           }
-          text="Add to Playlist"
+          text="Playlists"
         />
       )}
       {hideLyrics ? null : (

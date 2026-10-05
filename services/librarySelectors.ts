@@ -65,6 +65,26 @@ export const getPlaylistTracks = (
     .filter((track): track is LocalTrack => Boolean(track));
 };
 
+export const planPlaylistMembershipChanges = (
+  playlists: LocalPlaylist[],
+  trackId: string,
+  flippedPlaylistIds: ReadonlySet<string>
+) => {
+  const flippedPlaylists = playlists.filter((playlist) =>
+    flippedPlaylistIds.has(playlist.id)
+  );
+  const isMember = (playlist: LocalPlaylist) =>
+    playlist.trackIds.includes(trackId);
+  return {
+    addTo: flippedPlaylists
+      .filter((playlist) => !isMember(playlist))
+      .map((playlist) => playlist.id),
+    removeFrom: flippedPlaylists
+      .filter(isMember)
+      .map((playlist) => playlist.id),
+  };
+};
+
 export const buildTrackSearchIndex = (tracks: LocalTrack[]) =>
   tracks.map((track) => ({
     haystack: [

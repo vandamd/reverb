@@ -13,39 +13,57 @@ import {
   useLibraryActions,
   useLibraryPlaylists,
 } from "@/contexts/LibraryContext";
-import { summariseTracks } from "@/services/librarySelectors";
+import {
+  planPlaylistMembershipChanges,
+  summariseTracks,
+} from "@/services/librarySelectors";
 import type { LocalPlaylist } from "@/types/music";
 import { n } from "@/utils/scaling";
 
 export default function AddToPlaylistScreen() {
   const { trackId } = useLocalSearchParams<{ trackId: string }>();
-  const { addTrackToPlaylist } = useLibraryActions();
+  const { addTrackToPlaylist, removeTrackFromPlaylist } = useLibraryActions();
   const { getPlaylistTracks, playlists } = useLibraryPlaylists();
   const { invertColors } = useInvertColors();
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [flippedIds, setFlippedIds] = useState<ReadonlySet<string>>(new Set());
 
   const textColor = invertColors ? "black" : "white";
-  const canAdd = Boolean(trackId) && selectedIds.length > 0;
+  const canApply = Boolean(trackId) && flippedIds.size > 0;
 
   const togglePlaylist = useCallback((playlistId: string) => {
-    setSelectedIds((current) =>
-      current.includes(playlistId)
-        ? current.filter((id) => id !== playlistId)
-        : [...current, playlistId]
-    );
+    setFlippedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(playlistId)) {
+        next.add(playlistId);
+      }
+      return next;
+    });
   }, []);
 
-  const done = () => {
-    if (!canAdd) {
+  const done = async () => {
+    if (!canApply) {
       return;
     }
 
+    const { addTo, removeFrom } = planPlaylistMembershipChanges(
+      playlists,
+      trackId,
+      flippedIds
+    );
     router.back();
-    setTimeout(() => {
-      for (const playlistId of selectedIds) {
-        addTrackToPlaylist(playlistId, trackId);
-      }
-    }, 0);
+    const changes = [
+      ...removeFrom.map(
+        (playlistId) => () => removeTrackFromPlaylist(playlistId, trackId)
+      ),
+      ...addTo.map(
+        (playlistId) => () => addTrackToPlaylist(playlistId, trackId)
+      ),
+    ];
+    for (const change of changes) {
+      await change().catch(() => {
+        // One failed playlist should not stop the rest from being saved.
+      });
+    }
   };
 
   const data = useMemo(
@@ -71,7 +89,8 @@ export default function AddToPlaylistScreen() {
       }
 
       const tracks = getPlaylistTracks(item);
-      const isSelected = selectedIds.includes(item.id);
+      const isMember = item.trackIds.includes(trackId);
+      const isSelected = isMember !== flippedIds.has(item.id);
 
       return (
         <HapticPressable
@@ -102,13 +121,13 @@ export default function AddToPlaylistScreen() {
         </HapticPressable>
       );
     },
-    [getPlaylistTracks, selectedIds, textColor, togglePlaylist]
+    [flippedIds, getPlaylistTracks, textColor, togglePlaylist, trackId]
   );
 
   if (!trackId) {
     return (
       <ContentContainer
-        headerTitle="Add to Playlist"
+        headerTitle="Playlists"
         scrollable={false}
         style={{ alignItems: "center", justifyContent: "center" }}
       >
@@ -126,15 +145,15 @@ export default function AddToPlaylistScreen() {
       footer={
         <View style={styles.doneContainer}>
           <HapticPressable
-            disabled={!canAdd}
+            disabled={!canApply}
             onPress={done}
-            style={[styles.doneButton, !canAdd && styles.disabledButton]}
+            style={[styles.doneButton, !canApply && styles.disabledButton]}
           >
             <StyledText style={styles.doneButtonText}>Done</StyledText>
           </HapticPressable>
         </View>
       }
-      headerTitle="Add to Playlist"
+      headerTitle="Playlists"
       keyExtractor={(item) => item.id}
       renderItem={renderPlaylist}
     />

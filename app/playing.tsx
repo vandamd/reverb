@@ -403,7 +403,7 @@ const ExtraControls = memo(function ExtraControls({
       )}
       {!hidePlaylists && (
         <HapticPressable onPress={onAddToPlaylist}>
-          <MaterialIcon color={colour} name="add" size={n(30)} />
+          <MaterialIcon color={colour} name="queue-music" size={n(30)} />
         </HapticPressable>
       )}
     </View>
@@ -438,7 +438,7 @@ const EmptyExtraControls = memo(function EmptyExtraControls() {
         <MaterialIcon color="transparent" name="mic-external-on" size={n(30)} />
       )}
       {!hidePlaylists && (
-        <MaterialIcon color="transparent" name="add" size={n(30)} />
+        <MaterialIcon color="transparent" name="queue-music" size={n(30)} />
       )}
     </View>
   );
